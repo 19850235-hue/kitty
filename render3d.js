@@ -573,6 +573,123 @@ const Render3D = {
         return group;
     },
 
+    // 🧊 ENEMIGO NUEVO MUNDO 2: GOLEM DE HIELO (tanque, aguanta 2 golpes)
+    createGolemEnemyMesh: () => {
+        const group = new THREE.Group();
+        const iceMat = new THREE.MeshStandardMaterial({ color: 0x81d4fa, roughness: 0.25, metalness: 0.15, transparent: true, opacity: 0.92 });
+        const coreMat = new THREE.MeshStandardMaterial({ color: 0x0277bd, roughness: 0.4 });
+
+        const torso = new THREE.Mesh(new THREE.BoxGeometry(0.9, 1.1, 0.7), iceMat);
+        torso.position.y = 1.05;
+        group.add(torso);
+
+        const head = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.55, 0.55), iceMat);
+        head.position.y = 1.9;
+        group.add(head);
+
+        const eyeMat = new THREE.MeshBasicMaterial({ color: 0x00e5ff });
+        const eyeL = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, 0.05), eyeMat);
+        eyeL.position.set(-0.14, 1.92, 0.29);
+        group.add(eyeL);
+        const eyeR = eyeL.clone(); eyeR.position.x = 0.14; group.add(eyeR);
+
+        // Brazos gruesos de hielo
+        const armL = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.9, 0.32), iceMat);
+        armL.position.set(-0.65, 0.95, 0);
+        group.add(armL);
+        const armR = armL.clone(); armR.position.x = 0.65; group.add(armR);
+
+        // Piernas cortas y anchas
+        const legL = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.55, 0.35), coreMat);
+        legL.position.set(-0.25, 0.3, 0);
+        group.add(legL);
+        const legR = legL.clone(); legR.position.x = 0.25; group.add(legR);
+
+        // Núcleo brillante en el pecho (grieta de energía)
+        const core = new THREE.Mesh(new THREE.SphereGeometry(0.14, 12, 12), new THREE.MeshBasicMaterial({ color: 0x18ffff }));
+        core.position.set(0, 1.1, 0.38);
+        group.add(core);
+
+        // Cristales puntiagudos en los hombros
+        const crystalMat = new THREE.MeshStandardMaterial({ color: 0xb3e5fc, roughness: 0.1, metalness: 0.3 });
+        [-0.6, 0.6].forEach(sx => {
+            const crystal = new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.4, 6), crystalMat);
+            crystal.position.set(sx, 1.55, 0);
+            crystal.rotation.z = sx > 0 ? -0.3 : 0.3;
+            group.add(crystal);
+        });
+
+        return group;
+    },
+
+    // 👻 ENEMIGO NUEVO MUNDO 3: FANTASMA ERRÁTICO NOCTURNO
+    createGhostEnemyMesh: () => {
+        const group = new THREE.Group();
+        const bodyMat = new THREE.MeshStandardMaterial({ color: 0xce93d8, transparent: true, opacity: 0.75, roughness: 0.3, emissive: 0x7b1fa2, emissiveIntensity: 0.3 });
+
+        const body = new THREE.Mesh(new THREE.SphereGeometry(0.55, 16, 16, 0, Math.PI * 2, 0, Math.PI * 0.65), bodyMat);
+        group.add(body);
+
+        // Cola ondulada tipo fantasma (varios lóbulos)
+        for (let i = 0; i < 4; i++) {
+            const lobe = new THREE.Mesh(new THREE.SphereGeometry(0.16, 10, 10), bodyMat);
+            lobe.position.set(-0.4 + i * 0.27, -0.35, 0);
+            group.add(lobe);
+        }
+
+        // Ojos brillantes
+        const eyeMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+        const eyeL = new THREE.Mesh(new THREE.SphereGeometry(0.08, 10, 10), eyeMat);
+        eyeL.position.set(-0.17, 0.08, 0.48);
+        group.add(eyeL);
+        const eyeR = eyeL.clone(); eyeR.position.x = 0.17; group.add(eyeR);
+
+        const pupilMat = new THREE.MeshBasicMaterial({ color: 0x4a148c });
+        const pupilL = new THREE.Mesh(new THREE.SphereGeometry(0.04, 8, 8), pupilMat);
+        pupilL.position.set(-0.17, 0.08, 0.55);
+        group.add(pupilL);
+        const pupilR = pupilL.clone(); pupilR.position.x = 0.17; group.add(pupilR);
+
+        return group;
+    },
+
+    // 💰 COFRE SECRETO (opcional, da puntos extra)
+    createChestMesh: () => {
+        const group = new THREE.Group();
+        const woodMat = new THREE.MeshStandardMaterial({ color: 0x8d5524, roughness: 0.7 });
+        const goldMat = new THREE.MeshStandardMaterial({ color: 0xffd700, metalness: 0.7, roughness: 0.25, emissive: 0xffab00, emissiveIntensity: 0.3 });
+
+        const base = new THREE.Mesh(new THREE.BoxGeometry(0.85, 0.5, 0.55), woodMat);
+        base.position.y = 0.25;
+        group.add(base);
+
+        const lid = new THREE.Mesh(new THREE.CylinderGeometry(0.43, 0.43, 0.55, 12, 1, false, 0, Math.PI), woodMat);
+        lid.rotation.z = Math.PI / 2;
+        lid.position.y = 0.5;
+        group.add(lid);
+
+        const band1 = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.08, 0.6), goldMat);
+        band1.position.y = 0.25;
+        group.add(band1);
+        const band2 = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.55, 0.6), goldMat);
+        band2.position.y = 0.5;
+        group.add(band2);
+
+        const lock = new THREE.Mesh(new THREE.SphereGeometry(0.09, 10, 10), goldMat);
+        lock.position.set(0, 0.35, 0.29);
+        group.add(lock);
+
+        // Brillo/destello encima
+        const sparkleMat = new THREE.MeshBasicMaterial({ color: 0xfff59d, transparent: true, opacity: 0.8 });
+        const sparkle = new THREE.Mesh(new THREE.SphereGeometry(0.14, 10, 10), sparkleMat);
+        sparkle.position.y = 0.95;
+        sparkle.name = 'chestSparkle';
+        group.add(sparkle);
+
+        group.name = 'secretChest';
+        return group;
+    },
+
     // 🗿 2. GÁRGOLA DE PIEDRA VOLADORA
     createFlyingEnemyMesh: () => {
         const group = new THREE.Group();
@@ -855,6 +972,60 @@ const Render3D = {
         return ice;
     },
 
+    // PELIGRO: POZO DE LAVA (llena el hueco entre plataformas, con capas de fuego bien visibles)
+    createLavaMesh: (width) => {
+        const group = new THREE.Group();
+        const w = Math.max(width, 2);
+
+        // Fondo oscuro del pozo (da sensación de profundidad)
+        const pitMat = new THREE.MeshStandardMaterial({ color: 0x3e0d02, roughness: 0.9 });
+        const pit = new THREE.Mesh(new THREE.BoxGeometry(w, 2.2, 5.5), pitMat);
+        pit.position.y = -0.8;
+        group.add(pit);
+
+        // Capa de lava brillante (emissive fuerte, muy distinta al color de las plataformas)
+        const lavaMat = new THREE.MeshStandardMaterial({ color: 0xff5722, emissive: 0xff9100, emissiveIntensity: 1.1, roughness: 0.35 });
+        const pool = new THREE.Mesh(new THREE.BoxGeometry(w, 0.35, 5.6), lavaMat);
+        pool.position.y = 0.15;
+        pool.name = 'lavaSurface';
+        group.add(pool);
+
+        // Llamas puntiagudas asomando de la superficie
+        const flameMat = new THREE.MeshBasicMaterial({ color: 0xffca28 });
+        const flameCount = Math.max(3, Math.floor(w / 1.3));
+        for (let i = 0; i < flameCount; i++) {
+            const flame = new THREE.Mesh(new THREE.ConeGeometry(0.22, 0.55 + Math.random() * 0.3, 6), flameMat);
+            flame.position.set(-w / 2 + (i + 0.5) * (w / flameCount), 0.55, (Math.random() - 0.5) * 4);
+            flame.name = 'lavaFlame';
+            group.add(flame);
+        }
+
+        // Brasas/burbujas flotando
+        const bubbleMat = new THREE.MeshBasicMaterial({ color: 0xffe082 });
+        for (let i = 0; i < 5; i++) {
+            const bubble = new THREE.Mesh(new THREE.SphereGeometry(0.12 + Math.random() * 0.1, 8, 8), bubbleMat);
+            bubble.position.set((Math.random() - 0.5) * w * 0.85, 0.4 + Math.random() * 0.5, (Math.random() - 0.5) * 4);
+            bubble.name = 'lavaEmber';
+            group.add(bubble);
+        }
+
+        group.userData.isLavaHazard = true;
+        return group;
+    },
+
+    // PELIGRO: FILA DE PICOS (llena el hueco entre plataformas, o se coloca sobre una plataforma)
+    createSpikeMesh: (width) => {
+        const group = new THREE.Group();
+        const mat = new THREE.MeshStandardMaterial({ color: 0x616161, metalness: 0.6, roughness: 0.3 });
+        const count = Math.max(2, Math.floor(width / 0.9));
+        for (let i = 0; i < count; i++) {
+            const spike = new THREE.Mesh(new THREE.ConeGeometry(0.4, 0.9, 6), mat);
+            spike.position.set(-width / 2 + (i + 0.5) * (width / count), 0.3, 0);
+            group.add(spike);
+        }
+        return group;
+    },
+
     // DECORACIONES DE PLATAFORMA SANRIO
     createProp: (type) => {
         const group = new THREE.Group();
@@ -1009,19 +1180,27 @@ const Render3D = {
     },
 
     // --- FONDO MUNDO SANRIO / HELLO KITTY ---
-    createBackgroundDecor: (scene, levelWidth) => {
+    createBackgroundDecor: (scene, levelWidth, theme = 'garden') => {
         const group = new THREE.Group();
+        group.userData.theme = theme;
 
-        const hillMat1 = new THREE.MeshStandardMaterial({ color: 0xff8a65, roughness: 0.8 });
-        const hillMat2 = new THREE.MeshStandardMaterial({ color: 0x9c64d6, roughness: 0.8 });
+        const THEMES = {
+            garden: { hill1: 0xff8a65, hill2: 0x9c64d6, sun: 0xffd54f, sunGlow: 0xff8a65, tree: 0xff7043, cloud: 0xffe0c2 },
+            snow: { hill1: 0xfff9c4, hill2: 0xffe0b2, sun: 0xfff59d, sunGlow: 0xffe0b2, tree: 0xffffff, cloud: 0xffffff },
+            night: { hill1: 0x4a148c, hill2: 0x2a1454, sun: 0xe1f5fe, sunGlow: 0x7e57c2, tree: 0x7e57c2, cloud: 0xd1c4e9 }
+        };
+        const th = THEMES[theme] || THEMES.garden;
 
-        // Sol de atardecer gigante en el horizonte
-        const sunMat = new THREE.MeshBasicMaterial({ color: 0xffd54f });
-        const sun = new THREE.Mesh(new THREE.SphereGeometry(9, 24, 24), sunMat);
+        const hillMat1 = new THREE.MeshStandardMaterial({ color: th.hill1, roughness: 0.8 });
+        const hillMat2 = new THREE.MeshStandardMaterial({ color: th.hill2, roughness: 0.8 });
+
+        // Sol/Luna gigante en el horizonte (luna en el mundo nocturno)
+        const sunMat = new THREE.MeshBasicMaterial({ color: th.sun });
+        const sun = new THREE.Mesh(new THREE.SphereGeometry(theme === 'night' ? 7 : 9, 24, 24), sunMat);
         sun.position.set(levelWidth * 0.5, 14, -55);
         group.add(sun);
-        const sunGlowMat = new THREE.MeshBasicMaterial({ color: 0xff8a65, transparent: true, opacity: 0.35 });
-        const sunGlow = new THREE.Mesh(new THREE.SphereGeometry(13, 24, 24), sunGlowMat);
+        const sunGlowMat = new THREE.MeshBasicMaterial({ color: th.sunGlow, transparent: true, opacity: 0.35 });
+        const sunGlow = new THREE.Mesh(new THREE.SphereGeometry(theme === 'night' ? 10 : 13, 24, 24), sunGlowMat);
         sunGlow.position.copy(sun.position);
         group.add(sunGlow);
 
@@ -1037,14 +1216,75 @@ const Render3D = {
             hill2.scale.set(1.7, 0.9, 1);
             group.add(hill2);
 
-            // Árboles Sakura
-            const sakuraTree = Render3D.createSakuraTree();
+            // Árboles (color según el tema: sakura rosa, nevados, o silueta nocturna)
+            const sakuraTree = Render3D.createSakuraTree(th.tree);
             sakuraTree.position.set(i * 22 + (Math.random() * 6 - 3), 1, -16);
             group.add(sakuraTree);
         }
 
+        // SEGUNDA CAPA DE BOSQUE: pinos densos y coloridos más cerca de la cámara, con toque mágico (degradado + brillo)
+        const pinePalettes = theme === 'night'
+            ? [[0x7e57c2, 0x9575cd, 0xb39ddb], [0x5c6bc0, 0x7986cb, 0x9fa8da], [0xba68c8, 0xce93d8, 0xe1bee7]]
+            : theme === 'snow'
+            ? [[0x4db6ac, 0x80cbc4, 0xb2dfdb], [0x64b5f6, 0x90caf9, 0xbbdefb], [0x81c784, 0xa5d6a7, 0xc8e6c9]]
+            : [[0x66bb6a, 0x81c784, 0xa5d6a7], [0xff8a65, 0xffab91, 0xffccbc], [0xba68c8, 0xce93d8, 0xf3e5f5]];
+        const pineCount = Math.ceil(levelWidth / 5.5);
+        for (let i = 0; i < pineCount; i++) {
+            const palette = pinePalettes[Math.floor(Math.random() * pinePalettes.length)];
+            const isMagic = Math.random() < 0.35;
+            const pine = Render3D.createPineTree(palette, isMagic);
+            const scale = 0.55 + Math.random() * 0.8;
+            pine.scale.set(scale, scale, scale);
+            pine.position.set(Math.random() * (levelWidth + 30) - 15, -0.5 + Math.random() * 0.8, -8 - Math.random() * 7);
+            if (isMagic) pine.userData = { isMagicTree: true, twinkleOffset: Math.random() * Math.PI * 2 };
+            group.add(pine);
+        }
+
+        // Hongos gigantes de cuento de hadas, esparcidos entre los árboles
+        const mushroomColors = theme === 'night' ? [0x9575cd, 0xba68c8] : theme === 'snow' ? [0x4fc3f7, 0xff8a65] : [0xff5252, 0xffca28, 0xff80ab];
+        const mushroomCount = Math.ceil(levelWidth / 16);
+        for (let i = 0; i < mushroomCount; i++) {
+            const mush = Render3D.createGiantMushroom(mushroomColors[Math.floor(Math.random() * mushroomColors.length)]);
+            const scale = 0.8 + Math.random() * 0.9;
+            mush.scale.set(scale, scale, scale);
+            mush.position.set(Math.random() * (levelWidth + 30) - 15, -0.3, -6 - Math.random() * 4);
+            group.add(mush);
+        }
+
+        // FAUNA AMBIENTAL: le da vida real al bosque (revolotean solas, decorativas)
+        if (theme === 'garden') {
+            const butterflyColors = [0xff80ab, 0xfff176, 0x80deea, 0xba68c8];
+            const bfCount = Math.ceil(levelWidth / 9);
+            for (let i = 0; i < bfCount; i++) {
+                const bf = Render3D.createButterfly(butterflyColors[Math.floor(Math.random() * butterflyColors.length)]);
+                const baseY = 3 + Math.random() * 6;
+                bf.position.set(Math.random() * (levelWidth + 20) - 10, baseY, -3 - Math.random() * 5);
+                bf.userData = { isButterfly: true, baseX: bf.position.x, baseY, roamSpeed: 0.4 + Math.random() * 0.5, roamOffset: Math.random() * Math.PI * 2, flapSpeed: 8 + Math.random() * 4 };
+                group.add(bf);
+            }
+        } else if (theme === 'snow') {
+            const birdColors = [0xff7043, 0xffca28, 0xef5350];
+            const birdCount = Math.ceil(levelWidth / 14);
+            for (let i = 0; i < birdCount; i++) {
+                const bird = Render3D.createBird(birdColors[Math.floor(Math.random() * birdColors.length)]);
+                const baseY = 8 + Math.random() * 8;
+                bird.position.set(Math.random() * (levelWidth + 20) - 10, baseY, -6 - Math.random() * 6);
+                bird.userData = { isBird: true, baseY, roamSpeed: 0.5 + Math.random() * 0.4, roamOffset: Math.random() * Math.PI * 2, flapSpeed: 10 + Math.random() * 4 };
+                group.add(bird);
+            }
+        } else if (theme === 'night') {
+            const ffCount = Math.ceil(levelWidth / 6);
+            for (let i = 0; i < ffCount; i++) {
+                const ff = Render3D.createFirefly();
+                const baseY = 1.5 + Math.random() * 4;
+                ff.position.set(Math.random() * (levelWidth + 20) - 10, baseY, -3 - Math.random() * 6);
+                ff.userData = { isFirefly: true, baseX: ff.position.x, baseY, roamSpeed: 0.3 + Math.random() * 0.4, roamOffset: Math.random() * Math.PI * 2 };
+                group.add(ff);
+            }
+        }
+
         // Nubes con Silueta de Hello Kitty
-        const cloudMat = new THREE.MeshStandardMaterial({ color: 0xffe0c2, transparent: true, opacity: 0.9 });
+        const cloudMat = new THREE.MeshStandardMaterial({ color: th.cloud, transparent: true, opacity: theme === 'night' ? 0.5 : 0.9 });
         for (let i = 0; i < count * 2; i++) {
             const kittyCloud = new THREE.Group();
             
@@ -1068,11 +1308,11 @@ const Render3D = {
         }
 
         // Corazones y estrellas flotantes de colores (más vida y alegría)
-        const heartColors = [0xff1744, 0xff4081, 0xba68c8, 0xff80ab, 0xf06292];
-        const starColors = [0xffd54f, 0xfff176, 0xffffff, 0xff80ab, 0x80deea];
+        const heartColors = theme === 'night' ? [0xba68c8, 0x7e57c2, 0xffffff, 0xd1c4e9] : theme === 'snow' ? [0x81d4fa, 0xffffff, 0xfff59d, 0xb3e5fc] : [0xff1744, 0xff4081, 0xba68c8, 0xff80ab, 0xf06292];
+        const starColors = theme === 'night' ? [0xffffff, 0xfff9c4, 0xe1f5fe] : [0xffd54f, 0xfff176, 0xffffff, 0xff80ab, 0x80deea];
         const decorCount = Math.ceil(levelWidth / 7);
         for (let i = 0; i < decorCount; i++) {
-            const isHeart = Math.random() > 0.45;
+            const isHeart = theme === 'night' ? Math.random() > 0.75 : Math.random() > 0.45;
             const color = isHeart
                 ? heartColors[Math.floor(Math.random() * heartColors.length)]
                 : starColors[Math.floor(Math.random() * starColors.length)];
@@ -1098,11 +1338,103 @@ const Render3D = {
             group.add(deco);
         }
 
+        // Nieve cayendo (solo tema 'snow')
+        if (theme === 'snow') {
+            const snowMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.9 });
+            const snowCount = Math.ceil(levelWidth / 3);
+            for (let i = 0; i < snowCount; i++) {
+                const flake = new THREE.Mesh(new THREE.SphereGeometry(0.08 + Math.random() * 0.08, 6, 6), snowMat);
+                const startY = Math.random() * 22;
+                flake.position.set(Math.random() * (levelWidth + 30) - 15, startY, -5 - Math.random() * 20);
+                flake.userData = { isSnowflake: true, baseY: startY, fallSpeed: 0.6 + Math.random() * 0.8, driftOffset: Math.random() * Math.PI * 2 };
+                group.add(flake);
+            }
+        }
+
+        // Estrellas titilantes (solo tema 'night')
+        if (theme === 'night') {
+            const starMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+            const twinkleCount = Math.ceil(levelWidth / 2.5);
+            for (let i = 0; i < twinkleCount; i++) {
+                const tstar = new THREE.Mesh(new THREE.SphereGeometry(0.08, 6, 6), starMat);
+                tstar.position.set(Math.random() * (levelWidth + 30) - 15, 8 + Math.random() * 20, -30 - Math.random() * 25);
+                tstar.userData = { isTwinkleStar: true, twinkleOffset: Math.random() * Math.PI * 2 };
+                group.add(tstar);
+            }
+        }
+
         scene.add(group);
         return group;
     },
 
-    createSakuraTree: () => {
+    // 🌲 PINO DE BOSQUE (denso, para el primer plano - da sensación de bosque real)
+    createPineTree: (color = 0x2e7d32, magic = false) => {
+        const tree = new THREE.Group();
+        const trunk = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.22, 0.32, 2.2, 8),
+            new THREE.MeshStandardMaterial({ color: magic ? 0x8d6e63 : 0x6d4c41 })
+        );
+        trunk.position.y = 1.1;
+        tree.add(trunk);
+
+        // Si color es un array, cada nivel del árbol usa un color distinto (efecto degradado mágico)
+        const colors = Array.isArray(color) ? color : [color, color, color];
+        const tiers = [
+            { y: 2.3, r: 1.5, h: 1.6 },
+            { y: 3.3, r: 1.15, h: 1.4 },
+            { y: 4.15, r: 0.75, h: 1.2 }
+        ];
+        tiers.forEach((t, i) => {
+            const mat = new THREE.MeshStandardMaterial({
+                color: colors[i % colors.length], roughness: 0.65, flatShading: true,
+                emissive: magic ? colors[i % colors.length] : 0x000000, emissiveIntensity: magic ? 0.18 : 0
+            });
+            const cone = new THREE.Mesh(new THREE.ConeGeometry(t.r, t.h, 8), mat);
+            cone.position.y = t.y;
+            tree.add(cone);
+        });
+
+        // Árbol mágico: brillo/estrellita en la punta, como un árbol encantado
+        if (magic) {
+            const glowMat = new THREE.MeshBasicMaterial({ color: 0xfff59d });
+            const glow = new THREE.Mesh(new THREE.SphereGeometry(0.16, 10, 10), glowMat);
+            glow.position.y = 4.95;
+            glow.name = 'magicGlow';
+            tree.add(glow);
+            const haloMat = new THREE.MeshBasicMaterial({ color: 0xfff9c4, transparent: true, opacity: 0.4 });
+            const halo = new THREE.Mesh(new THREE.SphereGeometry(0.32, 10, 10), haloMat);
+            halo.position.y = 4.95;
+            halo.name = 'magicHalo';
+            tree.add(halo);
+        }
+
+        return tree;
+    },
+
+    // 🍄 HONGO GIGANTE DE BOSQUE MÁGICO (decorativo, le da toque de cuento de hadas)
+    createGiantMushroom: (capColor = 0xff5252) => {
+        const group = new THREE.Group();
+        const stemMat = new THREE.MeshStandardMaterial({ color: 0xfff3e0, roughness: 0.6 });
+        const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.32, 1.1, 10), stemMat);
+        stem.position.y = 0.55;
+        group.add(stem);
+
+        const capMat = new THREE.MeshStandardMaterial({ color: capColor, roughness: 0.5 });
+        const cap = new THREE.Mesh(new THREE.SphereGeometry(0.75, 16, 12, 0, Math.PI * 2, 0, Math.PI * 0.55), capMat);
+        cap.position.y = 1.15;
+        group.add(cap);
+
+        const dotMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.4 });
+        for (let i = 0; i < 5; i++) {
+            const dot = new THREE.Mesh(new THREE.SphereGeometry(0.09 + Math.random() * 0.05, 8, 8), dotMat);
+            const ang = (i / 5) * Math.PI * 2;
+            dot.position.set(Math.cos(ang) * 0.45, 1.35, Math.sin(ang) * 0.45);
+            group.add(dot);
+        }
+        return group;
+    },
+
+    createSakuraTree: (color = 0xff7043) => {
         const tree = new THREE.Group();
         const trunk = new THREE.Mesh(
             new THREE.CylinderGeometry(0.4, 0.6, 4, 12),
@@ -1111,7 +1443,7 @@ const Render3D = {
         trunk.position.y = 2;
         tree.add(trunk);
 
-        const leavesMat = new THREE.MeshStandardMaterial({ color: 0xff7043, roughness: 0.5 });
+        const leavesMat = new THREE.MeshStandardMaterial({ color, roughness: 0.5 });
         const top1 = new THREE.Mesh(new THREE.SphereGeometry(2.2, 16, 16), leavesMat);
         top1.position.y = 4.5;
         tree.add(top1);
@@ -1121,6 +1453,66 @@ const Render3D = {
         tree.add(top2);
 
         return tree;
+    },
+
+    // 🦋 MARIPOSA AMBIENTAL (decorativa, revolotea sola - vida en el Jardín Rosa)
+    createButterfly: (color = 0xff80ab) => {
+        const group = new THREE.Group();
+        const wingMat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.9, side: THREE.DoubleSide });
+        const wingL = new THREE.Mesh(new THREE.CircleGeometry(0.28, 10, 0, Math.PI), wingMat);
+        wingL.rotation.y = Math.PI / 2;
+        wingL.position.x = -0.03;
+        wingL.name = 'wingL';
+        group.add(wingL);
+        const wingR = wingL.clone();
+        wingR.rotation.y = -Math.PI / 2;
+        wingR.position.x = 0.03;
+        wingR.name = 'wingR';
+        group.add(wingR);
+        const bodyMat = new THREE.MeshBasicMaterial({ color: 0x4a148c });
+        const body = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.22, 6), bodyMat);
+        body.rotation.z = Math.PI / 2;
+        group.add(body);
+        group.scale.set(1.2, 1.2, 1.2);
+        return group;
+    },
+
+    // ✨ LUCIÉRNAGA AMBIENTAL (decorativa - vida nocturna en Castillo Dulce)
+    createFirefly: () => {
+        const group = new THREE.Group();
+        const glowMat = new THREE.MeshBasicMaterial({ color: 0xfff59d });
+        const glow = new THREE.Mesh(new THREE.SphereGeometry(0.09, 8, 8), glowMat);
+        group.add(glow);
+        const haloMat = new THREE.MeshBasicMaterial({ color: 0xfff9c4, transparent: true, opacity: 0.35 });
+        const halo = new THREE.Mesh(new THREE.SphereGeometry(0.22, 8, 8), haloMat);
+        group.add(halo);
+        return group;
+    },
+
+    // 🐦 PAJARITO AMBIENTAL (decorativo - vida en Valle Dorado)
+    createBird: (color = 0xff7043) => {
+        const group = new THREE.Group();
+        const bodyMat = new THREE.MeshStandardMaterial({ color, roughness: 0.5 });
+        const body = new THREE.Mesh(new THREE.SphereGeometry(0.16, 10, 10), bodyMat);
+        body.scale.set(1.3, 1, 1);
+        group.add(body);
+        const wingMat = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide });
+        const wingL = new THREE.Mesh(new THREE.CircleGeometry(0.15, 8, 0, Math.PI), wingMat);
+        wingL.position.set(-0.05, 0.02, 0);
+        wingL.rotation.y = Math.PI / 2;
+        wingL.name = 'wingL';
+        group.add(wingL);
+        const wingR = wingL.clone();
+        wingR.position.set(0.05, 0.02, 0);
+        wingR.rotation.y = -Math.PI / 2;
+        wingR.name = 'wingR';
+        group.add(wingR);
+        const beakMat = new THREE.MeshBasicMaterial({ color: 0xffca28 });
+        const beak = new THREE.Mesh(new THREE.ConeGeometry(0.04, 0.12, 6), beakMat);
+        beak.rotation.z = -Math.PI / 2;
+        beak.position.set(0.18, 0, 0);
+        group.add(beak);
+        return group;
     },
 
     updatePlayerSpriteAnim: (playerMesh, direction, frameIndex, isAirborne = false) => {
@@ -1240,6 +1632,41 @@ const Render3D = {
         const mat = new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 0.55, roughness: 0.25, metalness: 0.15 });
         const mesh = new THREE.Mesh(geo, mat);
         return mesh;
+    },
+
+    // LLAVE COLECCIONABLE DE MUNDO (dorada, con moño rosa a juego con el tema Sanrio)
+    createKeyMesh: () => {
+        const group = new THREE.Group();
+        const mat = new THREE.MeshStandardMaterial({ color: 0xffd700, emissive: 0xffb300, emissiveIntensity: 0.5, metalness: 0.75, roughness: 0.2 });
+
+        // Anillo de la llave
+        const ring = new THREE.Mesh(new THREE.TorusGeometry(0.32, 0.09, 12, 24), mat);
+        ring.position.set(-0.35, 0, 0);
+        group.add(ring);
+
+        // Vástago
+        const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 0.9, 10), mat);
+        shaft.rotation.z = Math.PI / 2;
+        shaft.position.set(0.25, 0, 0);
+        group.add(shaft);
+
+        // Dientes de la llave
+        const tooth1 = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.22, 0.14), mat);
+        tooth1.position.set(0.6, -0.15, 0);
+        group.add(tooth1);
+
+        const tooth2 = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.16, 0.14), mat);
+        tooth2.position.set(0.78, -0.1, 0);
+        group.add(tooth2);
+
+        // Moñito rosa Sanrio en el anillo
+        const bowMat = new THREE.MeshStandardMaterial({ color: 0xff4081, roughness: 0.25 });
+        const bow = new THREE.Mesh(new THREE.SphereGeometry(0.1, 10, 10), bowMat);
+        bow.position.set(-0.35, 0.32, 0);
+        group.add(bow);
+
+        group.scale.set(1.15, 1.15, 1.15);
+        return group;
     },
 
     // ARCO VICTORIA HELLO KITTY CON MOÑO GIGANTE

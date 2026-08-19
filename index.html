@@ -1,37 +1,25 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sanrio Friends 3D Super World 🎀</title>
-    <link rel="stylesheet" href="style.css">
-    
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/cannon.js/0.6.2/cannon.min.js"></script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Super Sanrio vs Demonios</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
 </head>
 <body>
 
-    <div class="arcade-cabinet">
-        <div class="arcade-header">
-            <span class="star-icon">⭐</span>
-            <h1>SANRIO FRIENDS 3D</h1>
-            <span class="star-icon">⭐</span>
-        </div>
+  <div id="game-container"></div>
 
-        <div id="game-container"></div>
+  <!-- Librerías 3D y de físicas: deben cargar ANTES que render3d.js y physics.js -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/cannon.js/0.6.2/cannon.min.js"></script>
 
-        <div class="instructions">
-            <div class="key-badge">👈 👉 / A D: Moverte</div>
-            <div class="key-badge">⬆️ / W / ESPACIO: Doble Salto</div>
-            <div class="key-badge">🧁 F / Z: Disparo Normal</div>
-            <div class="key-badge">❄️ X / C: Disparo Hielo</div>
-            <div class="key-badge">💥 E: Habilidad Especial (Ulti)</div>
-        </div>
-    </div>
-
-    <script src="audioFX.js"></script>
-    <script src="render3d.js"></script>
-    <script src="physics.js"></script>
-    <script src="game.js"></script>
+  <script src="physics.js"></script>
+  <script src="audioFX.js"></script>
+  <script src="render3d.js"></script>
+  <script src="game.js"></script>
 </body>
 </html>

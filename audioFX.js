@@ -1,81 +1,142 @@
 // ==========================================
-// --- SINTETIZADOR DE AUDIO RETRO (WEB AUDIO) - VERSIÓN SIMPLE ---
+// --- SINTETIZADOR DE AUDIO RETRO (WEB AUDIO) ---
 // ==========================================
 const AudioFX = {
     ctx: null,
-    musicPlaying: false,
-    musicTimer: null,
-    musicStep: 0,
-
     init: () => {
         if (!AudioFX.ctx) {
-            const AC = window.AudioContext || window.webkitAudioContext;
-            if (!AC) {
-                console.error('[AudioFX] Este navegador no soporta Web Audio API.');
-                return;
-            }
-            AudioFX.ctx = new AC();
-            console.log('[AudioFX] init() llamado. Estado:', AudioFX.ctx.state);
-        }
-        if (AudioFX.ctx.state === 'suspended') {
-            AudioFX.ctx.resume();
+            AudioFX.ctx = new (window.AudioContext || window.webkitAudioContext)();
         }
     },
-
-    // Sonido básico: un tono simple que sube o baja de frecuencia.
-    _tone: (freq1, freq2, duration, type, volume) => {
-        if (!AudioFX.ctx) {
-            console.warn('[AudioFX] Intentaste reproducir un sonido pero AudioFX.init() no se ha llamado.');
-            return;
-        }
+    playJump: () => {
+        if (!AudioFX.ctx) return;
+        let osc = AudioFX.ctx.createOscillator();
+        let gain = AudioFX.ctx.createGain();
+        osc.connect(gain); gain.connect(AudioFX.ctx.destination);
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(150, AudioFX.ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(600, AudioFX.ctx.currentTime + 0.15);
+        gain.gain.setValueAtTime(0.3, AudioFX.ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, AudioFX.ctx.currentTime + 0.15);
+        osc.start(); osc.stop(AudioFX.ctx.currentTime + 0.15);
+    },
+    playShoot: () => {
+        if (!AudioFX.ctx) return;
+        let osc = AudioFX.ctx.createOscillator();
+        let gain = AudioFX.ctx.createGain();
+        osc.connect(gain); gain.connect(AudioFX.ctx.destination);
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(800, AudioFX.ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(200, AudioFX.ctx.currentTime + 0.1);
+        gain.gain.setValueAtTime(0.2, AudioFX.ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, AudioFX.ctx.currentTime + 0.1);
+        osc.start(); osc.stop(AudioFX.ctx.currentTime + 0.1);
+    },
+    playFreeze: () => {
+        if (!AudioFX.ctx) return;
+        let osc = AudioFX.ctx.createOscillator();
+        let gain = AudioFX.ctx.createGain();
+        osc.connect(gain); gain.connect(AudioFX.ctx.destination);
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(1200, AudioFX.ctx.currentTime);
+        osc.frequency.linearRampToValueAtTime(400, AudioFX.ctx.currentTime + 0.25);
+        gain.gain.setValueAtTime(0.15, AudioFX.ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, AudioFX.ctx.currentTime + 0.25);
+        osc.start(); osc.stop(AudioFX.ctx.currentTime + 0.25);
+    },
+    playUlti: () => {
+        if (!AudioFX.ctx) return;
+        let osc = AudioFX.ctx.createOscillator();
+        let gain = AudioFX.ctx.createGain();
+        osc.connect(gain); gain.connect(AudioFX.ctx.destination);
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(300, AudioFX.ctx.currentTime);
+        osc.frequency.linearRampToValueAtTime(1000, AudioFX.ctx.currentTime + 0.4);
+        gain.gain.setValueAtTime(0.3, AudioFX.ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, AudioFX.ctx.currentTime + 0.4);
+        osc.start(); osc.stop(AudioFX.ctx.currentTime + 0.4);
+    },
+    playEnemyHit: () => {
+        if (!AudioFX.ctx) return;
+        let osc = AudioFX.ctx.createOscillator();
+        let gain = AudioFX.ctx.createGain();
+        osc.connect(gain); gain.connect(AudioFX.ctx.destination);
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(500, AudioFX.ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(120, AudioFX.ctx.currentTime + 0.12);
+        gain.gain.setValueAtTime(0.22, AudioFX.ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, AudioFX.ctx.currentTime + 0.12);
+        osc.start(); osc.stop(AudioFX.ctx.currentTime + 0.12);
+    },
+    playPlayerHit: () => {
+        if (!AudioFX.ctx) return;
+        let osc = AudioFX.ctx.createOscillator();
+        let gain = AudioFX.ctx.createGain();
+        osc.connect(gain); gain.connect(AudioFX.ctx.destination);
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(220, AudioFX.ctx.currentTime);
+        osc.frequency.linearRampToValueAtTime(60, AudioFX.ctx.currentTime + 0.3);
+        gain.gain.setValueAtTime(0.28, AudioFX.ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, AudioFX.ctx.currentTime + 0.3);
+        osc.start(); osc.stop(AudioFX.ctx.currentTime + 0.3);
+    },
+    playKeyGet: () => {
+        if (!AudioFX.ctx) return;
         const now = AudioFX.ctx.currentTime;
-        const osc = AudioFX.ctx.createOscillator();
-        const gain = AudioFX.ctx.createGain();
-        osc.connect(gain);
-        gain.connect(AudioFX.ctx.destination);
-
-        osc.type = type;
-        osc.frequency.setValueAtTime(freq1, now);
-        osc.frequency.linearRampToValueAtTime(freq2, now + duration);
-
-        gain.gain.setValueAtTime(volume, now);
-        gain.gain.linearRampToValueAtTime(0.0001, now + duration);
-
-        osc.start(now);
-        osc.stop(now + duration);
+        [660, 880, 1320].forEach((freq, i) => {
+            let osc = AudioFX.ctx.createOscillator();
+            let gain = AudioFX.ctx.createGain();
+            osc.connect(gain); gain.connect(AudioFX.ctx.destination);
+            osc.type = 'triangle';
+            osc.frequency.setValueAtTime(freq, now + i * 0.09);
+            gain.gain.setValueAtTime(0.001, now + i * 0.09);
+            gain.gain.exponentialRampToValueAtTime(0.25, now + i * 0.09 + 0.02);
+            gain.gain.exponentialRampToValueAtTime(0.01, now + i * 0.09 + 0.18);
+            osc.start(now + i * 0.09); osc.stop(now + i * 0.09 + 0.18);
+        });
     },
-
-    // --- EFECTOS DE SONIDO ---
-    playJump: () => AudioFX._tone(150, 600, 0.15, 'sine', 0.3),
-    playShoot: () => AudioFX._tone(800, 200, 0.1, 'triangle', 0.25),
-    playFreeze: () => AudioFX._tone(1200, 400, 0.25, 'square', 0.2),
-    playUlti: () => AudioFX._tone(300, 1000, 0.4, 'sawtooth', 0.3),
-    playPlayerHit: () => AudioFX._tone(180, 50, 0.2, 'sawtooth', 0.35),
-    playEnemyHit: () => AudioFX._tone(500, 250, 0.12, 'square', 0.25),
-
-    // --- MÚSICA DE FONDO: melodía simple en loop ---
-    _melody: [261.63, 293.66, 329.63, 261.63, 329.63, 349.23, 392.00, 329.63],
-
+    playWorldUnlock: () => {
+        if (!AudioFX.ctx) return;
+        const now = AudioFX.ctx.currentTime;
+        [523, 659, 784, 1047].forEach((freq, i) => {
+            let osc = AudioFX.ctx.createOscillator();
+            let gain = AudioFX.ctx.createGain();
+            osc.connect(gain); gain.connect(AudioFX.ctx.destination);
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(freq, now + i * 0.12);
+            gain.gain.setValueAtTime(0.001, now + i * 0.12);
+            gain.gain.exponentialRampToValueAtTime(0.3, now + i * 0.12 + 0.03);
+            gain.gain.exponentialRampToValueAtTime(0.01, now + i * 0.12 + 0.3);
+            osc.start(now + i * 0.12); osc.stop(now + i * 0.12 + 0.3);
+        });
+    },
+    // Loop de música de fondo muy simple (arpegio suave). Se puede parar con stopBackgroundMusic().
+    _musicNodes: [],
+    _musicInterval: null,
     playBackgroundMusic: () => {
-        if (!AudioFX.ctx || AudioFX.musicPlaying) return;
-        AudioFX.musicPlaying = true;
-        AudioFX.musicStep = 0;
-        AudioFX._playNextNote();
+        if (!AudioFX.ctx) return;
+        AudioFX.stopBackgroundMusic();
+        const notes = [392, 440, 494, 587, 494, 440];
+        let step = 0;
+        AudioFX._musicInterval = setInterval(() => {
+            if (!AudioFX.ctx) return;
+            let osc = AudioFX.ctx.createOscillator();
+            let gain = AudioFX.ctx.createGain();
+            osc.connect(gain); gain.connect(AudioFX.ctx.destination);
+            osc.type = 'sine';
+            const freq = notes[step % notes.length];
+            osc.frequency.setValueAtTime(freq, AudioFX.ctx.currentTime);
+            gain.gain.setValueAtTime(0.001, AudioFX.ctx.currentTime);
+            gain.gain.linearRampToValueAtTime(0.05, AudioFX.ctx.currentTime + 0.05);
+            gain.gain.exponentialRampToValueAtTime(0.001, AudioFX.ctx.currentTime + 0.4);
+            osc.start(); osc.stop(AudioFX.ctx.currentTime + 0.4);
+            step++;
+        }, 450);
     },
-
-    _playNextNote: () => {
-        if (!AudioFX.musicPlaying) return;
-        const freq = AudioFX._melody[AudioFX.musicStep % AudioFX._melody.length];
-        AudioFX._tone(freq, freq, 0.4, 'sine', 0.06);
-        AudioFX.musicStep++;
-        AudioFX.musicTimer = setTimeout(AudioFX._playNextNote, 500);
-    },
-
     stopBackgroundMusic: () => {
-        AudioFX.musicPlaying = false;
-        if (AudioFX.musicTimer) {
-            clearTimeout(AudioFX.musicTimer);
-            AudioFX.musicTimer = null;
+        if (AudioFX._musicInterval) {
+            clearInterval(AudioFX._musicInterval);
+            AudioFX._musicInterval = null;
         }
     }
 };
