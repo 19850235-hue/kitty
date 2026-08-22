@@ -1,7 +1,7 @@
 // ==========================================
 // --- SINTETIZADOR DE AUDIO RETRO (WEB AUDIO) ---
 // ==========================================
-const AudioFX = {
+window.AudioFX = {
     ctx: null,
     init: () => {
         if (!AudioFX.ctx) {

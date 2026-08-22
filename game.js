@@ -82,15 +82,44 @@ function levelLabel(levelIdx) {
 }
 
 // --- PROGRESO DEL JUGADOR ---
-let gameProgress = {
-    selectedSkin: 'kitty',
-    score: 0,
-    worlds: [
-        { unlocked: true, keys: 0, unlockedLevels: [true, false, false, false, false], completed: false },
-        { unlocked: false, keys: 0, unlockedLevels: [false, false, false, false, false], completed: false },
-        { unlocked: false, keys: 0, unlockedLevels: [false, false, false, false, false], completed: false }
-    ]
-};
+const SAVE_KEY = 'superKittyVsDemonios_save';
+
+function defaultProgress() {
+    return {
+        selectedSkin: 'kitty',
+        score: 0,
+        worlds: [
+            { unlocked: true, keys: 0, unlockedLevels: [true, false, false, false, false], completed: false },
+            { unlocked: false, keys: 0, unlockedLevels: [false, false, false, false, false], completed: false },
+            { unlocked: false, keys: 0, unlockedLevels: [false, false, false, false, false], completed: false }
+        ]
+    };
+}
+
+// Carga el progreso guardado en este navegador, si existe y tiene forma válida.
+function loadProgress() {
+    try {
+        const raw = localStorage.getItem(SAVE_KEY);
+        if (!raw) return defaultProgress();
+        const saved = JSON.parse(raw);
+        if (!saved || !Array.isArray(saved.worlds) || saved.worlds.length !== 3) return defaultProgress();
+        return saved;
+    } catch (err) {
+        console.warn('No se pudo cargar el progreso guardado, se empieza de cero.', err);
+        return defaultProgress();
+    }
+}
+
+// Guarda el progreso actual. Se llama solo en puntos clave (no en cada frame) para no saturar el navegador.
+function saveProgress() {
+    try {
+        localStorage.setItem(SAVE_KEY, JSON.stringify(gameProgress));
+    } catch (err) {
+        console.warn('No se pudo guardar el progreso (¿localStorage bloqueado?).', err);
+    }
+}
+
+let gameProgress = loadProgress();
 
 // --- GENERACIÓN PROCEDURAL DE NIVELES (determinista por semilla, no se repite el mismo layout copiado) ---
 function seededRandom(seed) {
@@ -287,7 +316,7 @@ function renderCharacterMenu() {
                 <div style="font-size: 10px; opacity: 0.95; margin-top: 2px;">${c.label}</div>
             </div>
         `;
-        btn.onclick = () => { gameProgress.selectedSkin = key; renderCharacterMenu(); };
+        btn.onclick = () => { gameProgress.selectedSkin = key; saveProgress(); renderCharacterMenu(); };
         list.appendChild(btn);
     });
 }
@@ -316,15 +345,10 @@ function renderOptionsMenu() {
     menu.querySelector('#back-btn').onclick = () => renderHomeMenu();
     menu.querySelector('#reset-btn').onclick = () => {
         if (confirm('¿Seguro que quieres reiniciar todo tu progreso (mundos, llaves y puntos)?')) {
-            gameProgress = {
-                selectedSkin: gameProgress.selectedSkin,
-                score: 0,
-                worlds: [
-                    { unlocked: true, keys: 0, unlockedLevels: [true, false, false, false, false], completed: false },
-                    { unlocked: false, keys: 0, unlockedLevels: [false, false, false, false, false], completed: false },
-                    { unlocked: false, keys: 0, unlockedLevels: [false, false, false, false, false], completed: false }
-                ]
-            };
+            const keepSkin = gameProgress.selectedSkin;
+            gameProgress = defaultProgress();
+            gameProgress.selectedSkin = keepSkin;
+            saveProgress();
             renderOptionsMenu();
         }
     };
@@ -473,8 +497,15 @@ function startLevel(worldIdx, levelIdx) {
 
     // Llave del nivel (solo niveles normales)
     let keyMesh = null;
+    let keyBaseY = 0;
     let keyCollected = isBoss; // en niveles jefe no hace falta llave
     let hintTimer = 0;
+
+    // El jefe se declara aquí (antes del HUD) porque updateHUD() lo consulta
+    // desde su primera llamada; si se declarara más abajo, en niveles de jefe
+    // esa llamada temprana lanzaba un error ("boss" aún no inicializado) que
+    // interrumpía todo el arranque del nivel y dejaba la pantalla en negro.
+    let boss = { active: false };
 
     // HUD
     const hud = document.createElement('div');
@@ -498,7 +529,7 @@ function startLevel(worldIdx, levelIdx) {
     const rand = seededRandom(seed + 999);
     const difficulty = worldIdx + levelIdx * 0.4; // sube con mundo y nivel
 
-    const enemies = [], flyingEnemies = [], bullets = [], hearts = [], movingPlatforms = [], hazards = [], chests = [];
+    const enemies = [], flyingEnemies = [], bullets = [], hearts = [], movingPlatforms = [], hazards = [], chests = [], abilityEffects = [];
     const worldEnemyFn = WORLD_ENEMIES[worldIdx];
     const worldEnemyHP = worldEnemyFn.groundHP;
 
@@ -626,7 +657,8 @@ function startLevel(worldIdx, levelIdx) {
     if (!isBoss && layout.length > 1) {
         const keyPlat = layout[layout.length - 2];
         keyMesh = Render3D.createKeyMesh();
-        keyMesh.position.set(keyPlat.x, keyPlat.y + 2.2, 0);
+        keyBaseY = keyPlat.y + 2.2;
+        keyMesh.position.set(keyPlat.x, keyBaseY, 0);
         scene.add(keyMesh);
     }
 
@@ -641,7 +673,6 @@ function startLevel(worldIdx, levelIdx) {
     }
 
     // JEFE DEMONIACO (solo nivel 5 de cada mundo, escala con el mundo)
-    let boss = { active: false };
     const fireballs = [];
     const bossPatrolMin = lastPlat.x - 8;
     const bossPatrolMax = lastPlat.x + lastPlat.w - 10;
@@ -710,22 +741,31 @@ function startLevel(worldIdx, levelIdx) {
     // Controles
     const keys = { left: false, right: false };
     let facingRight = true, jumpCount = 0;
+    let prevVelY = 0; // usado para distinguir "aterrizar" del "punto más alto del salto"
     const maxJumpsAllowed = currentChar.maxJumps || 2;
 
     const onKeyDown = (e) => {
         if (e.key === 'ArrowLeft' || e.key === 'a') keys.left = true;
         if (e.key === 'ArrowRight' || e.key === 'd') keys.right = true;
-        if (e.key === ' ' || e.key === 'w') {
-            if (jumpCount < maxJumpsAllowed) {
-                playerBody.velocity.y = currentChar.jump;
-                jumpCount++;
-                if (window.AudioFX) AudioFX.playJump();
-            }
-        }
+        // e.repeat es true cuando el navegador auto-repite el evento por mantener
+        // la tecla presionada. Sin este freno, mantener espacio hacía que el
+        // personaje saltara una y otra vez en cuanto tocaba el suelo (parecía
+        // "salto infinito"). Con esto, saltar/disparar/especial solo se activan
+        // con una pulsación real, no con el auto-repeat del sistema operativo.
+        if (e.repeat) return;
+        if (e.key === ' ' || e.key === 'w') doJump();
         if (e.key === 'f' || e.key === 'z') shoot('normal');
         if (e.key === 'x' || e.key === 'c') shoot('ice');
         if (e.key === 'e' || e.key === 'E') useSpecialAbility();
     };
+
+    function doJump() {
+        if (jumpCount < maxJumpsAllowed) {
+            playerBody.velocity.y = currentChar.jump;
+            jumpCount++;
+            if (window.AudioFX) AudioFX.playJump();
+        }
+    }
 
     window.addEventListener('keydown', onKeyDown);
     const onKeyUp = (e) => {
@@ -733,6 +773,42 @@ function startLevel(worldIdx, levelIdx) {
         if (e.key === 'ArrowRight' || e.key === 'd') keys.right = false;
     };
     window.addEventListener('keyup', onKeyUp);
+
+    // --- CONTROLES TÁCTILES (móvil/tablet): D-pad a la izquierda, acciones a la derecha ---
+    const isTouchDevice = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
+    let touchControlsEl = null;
+    if (isTouchDevice) {
+        touchControlsEl = document.createElement('div');
+        touchControlsEl.style.cssText = `position:absolute; inset:0; pointer-events:none; z-index:5; font-family:'Fredoka One', cursive; user-select:none;`;
+        touchControlsEl.innerHTML = `
+            <div style="position:absolute; left:10px; bottom:10px; display:flex; gap:8px; pointer-events:auto;">
+                <button data-t="left" style="width:52px;height:52px;border-radius:50%;border:3px solid #fff;background:rgba(216,27,96,0.55);color:#fff;font-size:22px;touch-action:none;">◀</button>
+                <button data-t="right" style="width:52px;height:52px;border-radius:50%;border:3px solid #fff;background:rgba(216,27,96,0.55);color:#fff;font-size:22px;touch-action:none;">▶</button>
+            </div>
+            <div style="position:absolute; right:10px; bottom:10px; display:flex; align-items:flex-end; gap:8px; pointer-events:auto;">
+                <button data-t="ice" style="width:44px;height:44px;border-radius:50%;border:3px solid #fff;background:rgba(79,195,247,0.7);color:#fff;font-size:18px;touch-action:none;">❄️</button>
+                <button data-t="shoot" style="width:44px;height:44px;border-radius:50%;border:3px solid #fff;background:rgba(216,27,96,0.7);color:#fff;font-size:18px;touch-action:none;">🍰</button>
+                <button data-t="special" style="width:50px;height:50px;border-radius:50%;border:3px solid #fff;background:rgba(255,193,7,0.8);color:#fff;font-size:20px;touch-action:none;">✨</button>
+                <button data-t="jump" style="width:58px;height:58px;border-radius:50%;border:3px solid #fff;background:rgba(233,30,99,0.85);color:#fff;font-size:22px;touch-action:none;">⬆️</button>
+            </div>
+        `;
+        container.appendChild(touchControlsEl);
+
+        const bindHold = (selector, onDown, onUp) => {
+            const el = touchControlsEl.querySelector(selector);
+            const down = (ev) => { ev.preventDefault(); onDown(); };
+            const up = (ev) => { ev.preventDefault(); if (onUp) onUp(); };
+            el.addEventListener('touchstart', down, { passive: false });
+            el.addEventListener('touchend', up, { passive: false });
+            el.addEventListener('touchcancel', up, { passive: false });
+        };
+        bindHold('[data-t="left"]', () => { keys.left = true; }, () => { keys.left = false; });
+        bindHold('[data-t="right"]', () => { keys.right = true; }, () => { keys.right = false; });
+        bindHold('[data-t="jump"]', () => doJump());
+        bindHold('[data-t="shoot"]', () => shoot('normal'));
+        bindHold('[data-t="ice"]', () => shoot('ice'));
+        bindHold('[data-t="special"]', () => useSpecialAbility());
+    }
 
     function shoot(type) {
         const mesh = Render3D.createCakeBulletMesh(type);
@@ -746,11 +822,59 @@ function startLevel(worldIdx, levelIdx) {
     }
 
     // --- SISTEMA DE HABILIDADES ESPECIALES (ULTIS) ---
+    // --- EFECTO VISUAL GENÉRICO PARA HABILIDADES ESPECIALES (anillo expansivo + chispas) ---
+    function spawnAbilityBurst(colorHex, radius = 3.5, duration = 0.5) {
+        const group = new THREE.Group();
+        group.position.set(playerMesh.position.x, playerMesh.position.y + 0.9, 0.1);
+
+        const ringGeo = new THREE.RingGeometry(0.2, 0.55, 32);
+        const ringMat = new THREE.MeshBasicMaterial({ color: colorHex, transparent: true, opacity: 0.9, side: THREE.DoubleSide, depthWrite: false });
+        const ring = new THREE.Mesh(ringGeo, ringMat);
+        group.add(ring);
+
+        const sparkles = [];
+        const sparkleCount = 8;
+        for (let i = 0; i < sparkleCount; i++) {
+            const sGeo = new THREE.CircleGeometry(0.14, 8);
+            const sMat = new THREE.MeshBasicMaterial({ color: colorHex, transparent: true, opacity: 1, depthWrite: false });
+            const s = new THREE.Mesh(sGeo, sMat);
+            const angle = (i / sparkleCount) * Math.PI * 2;
+            s.userData.dir = { x: Math.cos(angle), y: Math.sin(angle) };
+            group.add(s);
+            sparkles.push(s);
+        }
+
+        scene.add(group);
+        abilityEffects.push({ group, ring, sparkles, timer: 0, duration, radius });
+    }
+
+    function updateAbilityEffects(delta) {
+        for (let i = abilityEffects.length - 1; i >= 0; i--) {
+            const fx = abilityEffects[i];
+            fx.timer += delta;
+            const t = Math.min(fx.timer / fx.duration, 1);
+            const scale = 1 + t * fx.radius;
+            fx.ring.scale.set(scale, scale, 1);
+            fx.ring.material.opacity = 0.9 * (1 - t);
+            fx.sparkles.forEach(s => {
+                s.position.x = s.userData.dir.x * fx.radius * t;
+                s.position.y = s.userData.dir.y * fx.radius * t;
+                s.material.opacity = 1 - t;
+            });
+            if (t >= 1) {
+                scene.remove(fx.group);
+                abilityEffects.splice(i, 1);
+            }
+        }
+    }
+
     function useSpecialAbility() {
         if (abilityCooldown > 0) return;
         abilityCooldown = currentChar.cooldown;
 
         if (gameProgress.selectedSkin === 'kitty') {
+            spawnAbilityBurst(0xff4081, 5, 0.5);
+            if (window.AudioFX) AudioFX.playUlti();
             enemies.forEach(e => {
                 if (e.active && playerMesh.position.distanceTo(e.mesh.position) < 16) {
                     e.active = false;
@@ -763,6 +887,8 @@ function startLevel(worldIdx, levelIdx) {
                 boss.hp -= 2;
             }
         } else if (gameProgress.selectedSkin === 'mymelody') {
+            spawnAbilityBurst(0xffb2dd, 2.5, 0.45);
+            if (window.AudioFX) AudioFX.playUlti();
             isInvulnerable = true;
             abilityTimer = 5.0;
             if (!shieldMesh) {
@@ -770,10 +896,14 @@ function startLevel(worldIdx, levelIdx) {
                 playerMesh.add(shieldMesh);
             }
         } else if (gameProgress.selectedSkin === 'kuromi') {
+            spawnAbilityBurst(0x6a1b9a, 2, 0.35);
+            if (window.AudioFX) AudioFX.playUlti();
             isDashing = true;
             abilityTimer = 0.6;
             playerBody.velocity.x = facingRight ? 42 : -42;
         } else if (gameProgress.selectedSkin === 'cinnamon') {
+            spawnAbilityBurst(0x81d4fa, 4.5, 0.5);
+            if (window.AudioFX) AudioFX.playFreeze();
             enemies.concat(flyingEnemies).forEach(e => {
                 if (e.active && playerMesh.position.distanceTo(e.mesh.position) < 14) {
                     e.isFrozen = true;
@@ -781,11 +911,15 @@ function startLevel(worldIdx, levelIdx) {
                 }
             });
         } else if (gameProgress.selectedSkin === 'purin') {
+            spawnAbilityBurst(0xffca28, 3.5, 0.5);
+            if (window.AudioFX) AudioFX.playUlti();
             playerBody.velocity.y = 18;
             enemies.forEach(e => {
                 if (e.active && playerMesh.position.distanceTo(e.mesh.position) < 12) {
                     e.active = false;
                     scene.remove(e.mesh);
+                    physWorld.removeBody(e.body);
+                    gameProgress.score += 200;
                 }
             });
         }
@@ -822,6 +956,7 @@ function startLevel(worldIdx, levelIdx) {
     function cleanupListeners() {
         window.removeEventListener('keydown', onKeyDown);
         window.removeEventListener('keyup', onKeyUp);
+        if (touchControlsEl && touchControlsEl.parentNode) touchControlsEl.parentNode.removeChild(touchControlsEl);
     }
 
     function completeNormalLevel() {
@@ -831,6 +966,7 @@ function startLevel(worldIdx, levelIdx) {
         gameProgress.score += 1000;
         wp.keys++;
         if (levelIdx + 1 < LEVELS_PER_WORLD) wp.unlockedLevels[levelIdx + 1] = true;
+        saveProgress();
         renderLevelMenu(worldIdx);
     }
 
@@ -842,9 +978,11 @@ function startLevel(worldIdx, levelIdx) {
         wp.completed = true;
         if (worldIdx + 1 < WORLDS.length) {
             gameProgress.worlds[worldIdx + 1].unlocked = true;
+            saveProgress();
             if (window.AudioFX) AudioFX.playWorldUnlock();
             renderWorldMenu();
         } else {
+            saveProgress();
             renderWorldMenu();
         }
     }
@@ -858,9 +996,19 @@ function startLevel(worldIdx, levelIdx) {
         requestAnimationFrame(animate);
 
         const delta = clock.getDelta();
+
+        // Todo el trabajo de este fotograma va en un try/catch: si algo falla de forma
+        // inesperada, antes el juego se quedaba congelado en silencio (sin más pistas
+        // que "se quedó pegado en el aire"), porque un error a mitad del loop cortaba
+        // la función antes de llegar a renderer.render(). Ahora el error queda anotado
+        // en la consola del navegador y el juego sigue corriendo en el siguiente
+        // fotograma en vez de quedarse trabado para siempre.
+        try {
         physWorld.step(1 / 60, delta, 3);
 
         if (hintTimer > 0) { hintTimer -= delta; if (hintTimer <= 0) updateHUD(); }
+
+        updateAbilityEffects(delta);
 
         // Actualizar Cooldowns y Habilidades
         if (abilityCooldown > 0) {
@@ -904,15 +1052,33 @@ function startLevel(worldIdx, levelIdx) {
                 Render3D.updatePlayerSpriteAnim(playerMesh, facingRight ? 'right' : 'left', 0, isAirborne);
             }
         } else {
-            enemies.concat(flyingEnemies).forEach(e => {
+            enemies.forEach(e => {
                 if (e.active && playerMesh.position.distanceTo(e.mesh.position) < 2.0) {
                     e.active = false;
                     scene.remove(e.mesh);
+                    physWorld.removeBody(e.body);
+                    gameProgress.score += 200;
+                }
+            });
+            flyingEnemies.forEach(fe => {
+                if (fe.active && playerMesh.position.distanceTo(fe.mesh.position) < 2.0) {
+                    fe.active = false;
+                    scene.remove(fe.mesh);
+                    gameProgress.score += 250;
                 }
             });
         }
 
-        if (Math.abs(playerBody.velocity.y) < 0.1) jumpCount = 0;
+        // Solo reinicia los saltos disponibles al ATERRIZAR, es decir, cuando el
+        // personaje venía cayendo y deja de hacerlo (sea porque se detiene en 0
+        // o porque el motor de físicas responde con un pequeño rebote positivo
+        // al tocar la plataforma). Comparar solo con "cerca de 0" no basta: al
+        // aterrizar con fuerza la velocidad a veces salta de muy negativa a
+        // positiva en un solo fotograma y nunca pasa por ese rango, dejando el
+        // salto bloqueado para siempre. Tampoco se dispara en el punto más alto
+        // del salto, porque ahí la velocidad anterior es positiva, no negativa.
+        if (prevVelY < -0.1 && playerBody.velocity.y >= -0.1) jumpCount = 0;
+        prevVelY = playerBody.velocity.y;
 
         // Enemigos Terrestres
         enemies.forEach(e => {
@@ -1044,7 +1210,7 @@ function startLevel(worldIdx, levelIdx) {
         // Llave del nivel
         if (keyMesh && !keyCollected) {
             keyMesh.rotation.y += delta * 2.2;
-            keyMesh.position.y += Math.sin(Date.now() * 0.003) * 0.003;
+            keyMesh.position.y = keyBaseY + Math.sin(Date.now() * 0.003) * 0.3;
             if (playerMesh.position.distanceTo(keyMesh.position) < 1.5) {
                 keyCollected = true;
                 scene.remove(keyMesh);
@@ -1070,7 +1236,11 @@ function startLevel(worldIdx, levelIdx) {
         });
 
         // Proyectiles y Congelamiento
-        bullets.forEach((b, idx) => {
+        // Se recorre de atrás hacia adelante para poder quitar balas del arreglo con splice
+        // sin saltarse ninguna (forEach + splice en el mismo arreglo se salta el elemento
+        // siguiente al que se elimina, dejando balas "vivas" sin revisar).
+        for (let bi = bullets.length - 1; bi >= 0; bi--) {
+            const b = bullets[bi];
             b.mesh.position.x += b.vx * delta;
             b.life--;
 
@@ -1137,8 +1307,8 @@ function startLevel(worldIdx, levelIdx) {
                 }
             });
 
-            if (b.life <= 0) { scene.remove(b.mesh); bullets.splice(idx, 1); }
-        });
+            if (b.life <= 0) { scene.remove(b.mesh); bullets.splice(bi, 1); }
+        }
 
         // Animación de lava: brasas subiendo y llamas titilando
         hazards.forEach(hz => {
@@ -1179,12 +1349,16 @@ function startLevel(worldIdx, levelIdx) {
             mp.lastY = newY;
         });
 
-        // Peligros: picos sobre plataforma golpean al pisarlos; lava/picos en huecos dañan y reposicionan
+        // Peligros: picos sobre plataforma golpean al pisarlos; lava/picos en huecos dañan y reposicionan.
+        // Importante: el reposicionamiento SOLO debe ocurrir una vez por golpe (mientras el jugador
+        // está invulnerable/parpadeando), nunca en cada fotograma seguido — si no, en ciertos layouts
+        // el punto de "reposicionar" podía volver a caer dentro de la misma zona de peligro y quedar
+        // reposicionando al jugador sin parar, dejándolo congelado en el aire para siempre.
         hazards.forEach(hz => {
             if (playerBody.position.x < hz.x1 || playerBody.position.x > hz.x2) return;
             if (hz.type === 'platformSpikes') {
                 if (Math.abs(playerBody.position.y - (hz.y + 1.3)) < 0.9) takeDamage();
-            } else if (playerBody.position.y < hz.y + 1.2) {
+            } else if (playerBody.position.y < hz.y + 1.2 && !isInvulnerable) {
                 takeDamage();
                 playerBody.position.set(hz.safeX, hz.safeY + 2.5, 0);
                 playerBody.velocity.set(0, 5, 0);
@@ -1260,6 +1434,10 @@ function startLevel(worldIdx, levelIdx) {
                 c.position.y = c.userData.baseY + Math.sin(Date.now() * 0.001 * c.userData.floatSpeed + c.userData.floatOffset) * c.userData.floatAmp;
             }
         });
+
+        } catch (err) {
+            console.error('Super Kitty vs Demonios: error en el loop del juego (se ignora este fotograma, el juego continúa):', err);
+        }
 
         renderer.render(scene, camera);
     }
