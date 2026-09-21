@@ -82,44 +82,15 @@ function levelLabel(levelIdx) {
 }
 
 // --- PROGRESO DEL JUGADOR ---
-const SAVE_KEY = 'superKittyVsDemonios_save';
-
-function defaultProgress() {
-    return {
-        selectedSkin: 'kitty',
-        score: 0,
-        worlds: [
-            { unlocked: true, keys: 0, unlockedLevels: [true, false, false, false, false], completed: false },
-            { unlocked: false, keys: 0, unlockedLevels: [false, false, false, false, false], completed: false },
-            { unlocked: false, keys: 0, unlockedLevels: [false, false, false, false, false], completed: false }
-        ]
-    };
-}
-
-// Carga el progreso guardado en este navegador, si existe y tiene forma válida.
-function loadProgress() {
-    try {
-        const raw = localStorage.getItem(SAVE_KEY);
-        if (!raw) return defaultProgress();
-        const saved = JSON.parse(raw);
-        if (!saved || !Array.isArray(saved.worlds) || saved.worlds.length !== 3) return defaultProgress();
-        return saved;
-    } catch (err) {
-        console.warn('No se pudo cargar el progreso guardado, se empieza de cero.', err);
-        return defaultProgress();
-    }
-}
-
-// Guarda el progreso actual. Se llama solo en puntos clave (no en cada frame) para no saturar el navegador.
-function saveProgress() {
-    try {
-        localStorage.setItem(SAVE_KEY, JSON.stringify(gameProgress));
-    } catch (err) {
-        console.warn('No se pudo guardar el progreso (¿localStorage bloqueado?).', err);
-    }
-}
-
-let gameProgress = loadProgress();
+let gameProgress = {
+    selectedSkin: 'kitty',
+    score: 0,
+    worlds: [
+        { unlocked: true, keys: 0, unlockedLevels: [true, false, false, false, false], completed: false },
+        { unlocked: false, keys: 0, unlockedLevels: [false, false, false, false, false], completed: false },
+        { unlocked: false, keys: 0, unlockedLevels: [false, false, false, false, false], completed: false }
+    ]
+};
 
 // --- GENERACIÓN PROCEDURAL DE NIVELES (determinista por semilla, no se repite el mismo layout copiado) ---
 function seededRandom(seed) {
@@ -148,6 +119,126 @@ function generateLayout(seed, platformCount, wideEndPlatform) {
 
 const container = document.getElementById('game-container');
 container.style.position = 'relative';
+
+// Guarda el renderer 3D activo para poder liberarlo antes de crear uno nuevo.
+// Sin esto, cada nivel jugado (y sus reintentos) deja abierto un contexto WebGL
+// que el navegador nunca cierra solo; tras varios niveles se agota el cupo de
+// contextos y el siguiente nivel (típicamente el jefe, al ser el más lejano)
+// sale en pantalla negra porque ya no hay dónde crear uno nuevo.
+let currentGameRenderer = null;
+function disposeCurrentRenderer() {
+    if (currentGameRenderer) {
+        try {
+            currentGameRenderer.forceContextLoss();
+            currentGameRenderer.dispose();
+        } catch (err) { /* nada más que hacer, seguimos igual */ }
+        currentGameRenderer = null;
+    }
+}
+
+// ==========================================
+// --- MODO GRANDE / PANTALLA COMPLETA (persiste al cambiar de mundo, nivel o menú) ---
+// ==========================================
+let isLargeMode = false;
+
+function updateContainerSizeClass() {
+    container.classList.toggle('game-container-large', isLargeMode);
+    const cabinet = document.querySelector('.arcade-cabinet');
+    if (cabinet) cabinet.classList.toggle('cabinet-large', isLargeMode);
+}
+
+function toggleFullscreenMode() {
+    isLargeMode = !isLargeMode;
+    const cabinet = document.querySelector('.arcade-cabinet');
+    const target = cabinet || container;
+
+    if (isLargeMode) {
+        // Se intenta pantalla completa real del navegador; si no está disponible
+        // (o el navegador la bloquea), igual se aplica el modo grande por CSS.
+        const req = target.requestFullscreen || target.webkitRequestFullscreen;
+        if (req) {
+            try {
+                const p = req.call(target);
+                if (p && p.catch) p.catch(() => { /* pantalla completa no disponible aquí: se queda en modo grande por CSS */ });
+            } catch (err) { /* nada más que hacer, seguimos con el modo grande por CSS */ }
+        }
+    } else if (document.fullscreenElement || document.webkitFullscreenElement) {
+        const exit = document.exitFullscreen || document.webkitExitFullscreen;
+        if (exit) {
+            try {
+                const p = exit.call(document);
+                if (p && p.catch) p.catch(() => {});
+            } catch (err) { /* nada más que hacer */ }
+        }
+    }
+
+    updateContainerSizeClass();
+    if (window.__resizeGameCanvas) window.__resizeGameCanvas();
+}
+
+// Si el usuario sale de pantalla completa con Esc (o el navegador la cierra por su cuenta),
+// el modo grande también se apaga para que todo quede sincronizado.
+function handleFullscreenExit() {
+    const stillFullscreen = document.fullscreenElement || document.webkitFullscreenElement;
+    if (!stillFullscreen && isLargeMode) {
+        isLargeMode = false;
+        updateContainerSizeClass();
+        if (window.__resizeGameCanvas) window.__resizeGameCanvas();
+    }
+}
+document.addEventListener('fullscreenchange', handleFullscreenExit);
+document.addEventListener('webkitfullscreenchange', handleFullscreenExit);
+
+// Al terminar la transición de tamaño del contenedor, se reajusta el canvas 3D (si hay uno activo)
+container.addEventListener('transitionend', () => { if (window.__resizeGameCanvas) window.__resizeGameCanvas(); });
+
+window.addEventListener('keydown', (e) => {
+    if ((e.key === 'p' || e.key === 'P') && !e.repeat) toggleFullscreenMode();
+});
+
+// Botón flotante de pantalla completa: se crea UNA sola vez fuera de #game-container,
+// para que sobreviva a los container.innerHTML = '' de cada cambio de pantalla/menú.
+function ensureFullscreenButton() {
+    const cabinet = document.querySelector('.arcade-cabinet');
+    if (!cabinet || document.getElementById('fs-toggle-btn')) return;
+    const btn = document.createElement('button');
+    btn.id = 'fs-toggle-btn';
+    btn.title = 'Pantalla completa (P)';
+    btn.textContent = '⛶';
+    btn.style.cssText = `
+        position: absolute; top: 14px; right: 14px; width: 38px; height: 38px;
+        border-radius: 50%; border: 3px solid #ff80ab; background: #fff; color: #ff2a70;
+        font-size: 18px; cursor: pointer; z-index: 30; box-shadow: 0 3px 8px rgba(0,0,0,0.15);
+        font-family: inherit; display: flex; align-items: center; justify-content: center;
+    `;
+    btn.onclick = () => toggleFullscreenMode();
+    cabinet.appendChild(btn);
+}
+ensureFullscreenButton();
+
+// Aviso de error visible en pantalla: si algo falla, se ve el motivo aquí mismo
+// (evita quedarse con una pantalla negra/colgada sin saber por qué).
+function showGameError(err) {
+    const cabinet = document.querySelector('.arcade-cabinet');
+    if (!cabinet) return;
+    let box = document.getElementById('game-error-box');
+    if (!box) {
+        box = document.createElement('div');
+        box.id = 'game-error-box';
+        box.style.cssText = `
+            position: absolute; bottom: 10px; left: 10px; right: 10px;
+            background: #fff0f0; border: 2px solid #e53935; border-radius: 12px;
+            color: #b71c1c; font-family: monospace; font-size: 11px; text-align: left;
+            padding: 8px 12px; z-index: 40; max-height: 110px; overflow-y: auto;
+            white-space: pre-wrap; box-shadow: 0 3px 8px rgba(0,0,0,0.2);
+        `;
+        cabinet.appendChild(box);
+    }
+    const msg = (err && err.message) ? err.message : String(err);
+    box.textContent = '⚠️ ' + msg;
+    box.style.display = 'block';
+}
+window.addEventListener('error', (e) => showGameError(e.error || e.message || e));
 
 // Genera las partículas de fondo animadas para la tarjeta de un mundo (según su tema)
 function worldPreviewHTML(theme) {
@@ -316,7 +407,7 @@ function renderCharacterMenu() {
                 <div style="font-size: 10px; opacity: 0.95; margin-top: 2px;">${c.label}</div>
             </div>
         `;
-        btn.onclick = () => { gameProgress.selectedSkin = key; saveProgress(); renderCharacterMenu(); };
+        btn.onclick = () => { gameProgress.selectedSkin = key; renderCharacterMenu(); };
         list.appendChild(btn);
     });
 }
@@ -335,20 +426,49 @@ function renderOptionsMenu() {
     menu.innerHTML = `
         <button id="back-btn" style="position: absolute; top: 12px; left: 14px; padding: 6px 14px; border: none; border-radius: 20px; background: #fff; color: #0277bd; font-family: inherit; cursor: pointer; box-shadow: 0 2px 6px rgba(0,0,0,0.12); font-size: 12px;">⬅ Volver</button>
         <h2 class="kawaii-title" style="font-size: 22px; margin-bottom: 14px; color: #0288d1;">⚙️ OPCIONES ⚙️</h2>
-        <div style="background: #fff; border-radius: 20px; padding: 16px 22px; text-align: center; box-shadow: 0 5px 12px rgba(0,0,0,0.1); max-width: 280px;">
+        <div style="background: #fff; border-radius: 20px; padding: 16px 22px; text-align: center; box-shadow: 0 5px 12px rgba(0,0,0,0.1); max-width: 280px; width: 100%;">
             <p style="font-size: 13px; margin-bottom: 6px;">⭐ Puntos totales</p>
             <p style="font-size: 22px; color: #0288d1; margin-bottom: 14px;">${gameProgress.score}</p>
+            <div style="border-top: 2px dashed #b3e5fc; padding-top: 12px; margin-bottom: 12px;">
+                <p style="font-size: 13px; margin-bottom: 8px;">🔊 Sonido</p>
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <button id="mute-btn" style="border: none; border-radius: 12px; width: 38px; height: 38px; font-size: 16px; cursor: pointer; background: #e1f5fe; flex-shrink: 0;">${window.AudioFX && AudioFX.muted ? '🔇' : '🔊'}</button>
+                    <input id="volume-slider" type="range" min="0" max="100" value="${window.AudioFX ? Math.round(AudioFX.volume * 100) : 80}" style="flex: 1;">
+                </div>
+            </div>
             <button id="reset-btn" style="padding: 8px 16px; border: none; border-radius: 14px; background: #ef5350; color: #fff; font-family: inherit; cursor: pointer; font-size: 12px;">🗑️ Reiniciar progreso</button>
         </div>
     `;
     container.appendChild(menu);
     menu.querySelector('#back-btn').onclick = () => renderHomeMenu();
+
+    const muteBtn = menu.querySelector('#mute-btn');
+    const volumeSlider = menu.querySelector('#volume-slider');
+    muteBtn.onclick = () => {
+        if (!window.AudioFX) return;
+        const nowMuted = AudioFX.toggleMuted();
+        muteBtn.textContent = nowMuted ? '🔇' : '🔊';
+    };
+    volumeSlider.oninput = (e) => {
+        if (!window.AudioFX) return;
+        AudioFX.setVolume(e.target.value / 100);
+        if (AudioFX.muted && e.target.value > 0) {
+            AudioFX.setMuted(false);
+            muteBtn.textContent = '🔊';
+        }
+    };
+
     menu.querySelector('#reset-btn').onclick = () => {
         if (confirm('¿Seguro que quieres reiniciar todo tu progreso (mundos, llaves y puntos)?')) {
-            const keepSkin = gameProgress.selectedSkin;
-            gameProgress = defaultProgress();
-            gameProgress.selectedSkin = keepSkin;
-            saveProgress();
+            gameProgress = {
+                selectedSkin: gameProgress.selectedSkin,
+                score: 0,
+                worlds: [
+                    { unlocked: true, keys: 0, unlockedLevels: [true, false, false, false, false], completed: false },
+                    { unlocked: false, keys: 0, unlockedLevels: [false, false, false, false, false], completed: false },
+                    { unlocked: false, keys: 0, unlockedLevels: [false, false, false, false, false], completed: false }
+                ]
+            };
             renderOptionsMenu();
         }
     };
@@ -469,6 +589,7 @@ function renderLevelMenu(worldIdx) {
 // ==========================================
 
 function startLevel(worldIdx, levelIdx) {
+    disposeCurrentRenderer();
     container.innerHTML = '';
     const world = WORLDS[worldIdx];
     const wp = gameProgress.worlds[worldIdx];
@@ -477,8 +598,21 @@ function startLevel(worldIdx, levelIdx) {
 
     if (window.AudioFX) AudioFX.playBackgroundMusic();
 
-    const { scene, camera, renderer } = Render3D.setupScene(container, 800, 400, world.bg);
+    const { scene, camera, renderer } = Render3D.setupScene(container, container.clientWidth || 800, container.clientHeight || 400, world.bg);
+    currentGameRenderer = renderer;
     const physWorld = PhysicsEngine.initWorld();
+
+    // Mantiene el canvas 3D ajustado al tamaño real del contenedor (modo normal o grande/pantalla completa)
+    function resizeRenderer() {
+        const w = container.clientWidth;
+        const h = container.clientHeight;
+        if (!w || !h) return;
+        renderer.setSize(w, h);
+        camera.aspect = w / h;
+        camera.updateProjectionMatrix();
+    }
+    window.__resizeGameCanvas = resizeRenderer;
+    window.addEventListener('resize', resizeRenderer);
 
     // Crear MESH del Personaje
     const playerMesh = Render3D.createPlayerMesh(gameProgress.selectedSkin);
@@ -495,16 +629,36 @@ function startLevel(worldIdx, levelIdx) {
     let abilityCooldown = 0;
     let isDashing = false;
 
+    // --- Cámara temblorosa (screen shake) y pausa de impacto (hit-stop) ---
+    // Le dan peso a los golpes: un empujoncito de cámara al recibir/dar daño,
+    // y una micro-pausa al conectar un golpe fuerte contra el jefe.
+    let shakeTimer = 0, shakeDuration = 0, shakeMag = 0;
+    let hitStopTimer = 0;
+    function triggerShake(magnitude, duration) {
+        shakeMag = Math.max(shakeMag, magnitude);
+        shakeTimer = duration;
+        shakeDuration = duration;
+    }
+    function triggerHitStop(duration) {
+        hitStopTimer = Math.max(hitStopTimer, duration);
+    }
+
+    // Estallido visual reutilizable para las ultis: anillo + partículas que se expanden y desvanecen
+    function spawnAbilityBurst(colorHex, x, y, z, endScale = 6, duration = 0.45) {
+        const burst = Render3D.createAbilityBurstMesh(colorHex);
+        burst.position.set(x, y, z);
+        scene.add(burst);
+        abilityFX.push({ mesh: burst, life: duration, maxLife: duration, endScale });
+    }
+
     // Llave del nivel (solo niveles normales)
     let keyMesh = null;
-    let keyBaseY = 0;
     let keyCollected = isBoss; // en niveles jefe no hace falta llave
     let hintTimer = 0;
 
-    // El jefe se declara aquí (antes del HUD) porque updateHUD() lo consulta
-    // desde su primera llamada; si se declarara más abajo, en niveles de jefe
-    // esa llamada temprana lanzaba un error ("boss" aún no inicializado) que
-    // interrumpía todo el arranque del nivel y dejaba la pantalla en negro.
+    // "boss" se declara aquí (temprano) aunque los niveles normales no lo usen, porque el HUD
+    // lo lee más abajo desde su primera actualización — declararlo tarde causaba que el nivel
+    // del jefe final se quedara en pantalla negra (error de "usar boss antes de inicializarlo").
     let boss = { active: false };
 
     // HUD
@@ -516,7 +670,14 @@ function startLevel(worldIdx, levelIdx) {
         const cdText = abilityCooldown > 0 ? `⏳ Special (${Math.ceil(abilityCooldown)}s)` : `✨ Special (E) LISTO!`;
         const keyText = isBoss ? '' : ` | 🔑 ${keyCollected ? '¡Obtenida!' : 'Búscala'}`;
         let extra = extraText;
-        if (!extra && isBoss && boss && boss.active) extra = `<br>👺 JEFE DEMONIO: ${'💜'.repeat(Math.max(0, boss.hp))}`;
+        if (!extra && isBoss && boss && boss.active) {
+            const phaseTxt = boss.phase >= 3 ? '🔥 ¡FURIA MÁXIMA!' : boss.phase === 2 ? '😡 Enfurecido' : '';
+            const pct = Math.max(0, (boss.hp / boss.maxHP) * 100);
+            const barColor = boss.phase >= 3 ? '#ff1744' : boss.phase === 2 ? '#ff6d00' : '#7e57c2';
+            extra = `<br>👺 JEFE DEMONIO ${phaseTxt}<br>` +
+                `<div style="display:inline-block; width:220px; height:14px; background:#f0f0f0; border-radius:8px; border:2px solid #fff; overflow:hidden; vertical-align:middle; box-shadow:0 1px 3px rgba(0,0,0,0.25);">` +
+                `<div style="width:${pct}%; height:100%; background:${barColor}; transition:width 0.25s ease;"></div></div>`;
+        }
         if (!extra && hintTimer > 0) extra = `<br>🔒 ¡Consigue la llave antes de la meta!`;
         hud.innerHTML = `${world.icon} ${world.name} - Nivel ${levelIdx + 1}<br>Vidas: ${'💖'.repeat(lives)} | Puntos: ${gameProgress.score}${keyText} | ${cdText} ${extra}`;
     }
@@ -529,7 +690,7 @@ function startLevel(worldIdx, levelIdx) {
     const rand = seededRandom(seed + 999);
     const difficulty = worldIdx + levelIdx * 0.4; // sube con mundo y nivel
 
-    const enemies = [], flyingEnemies = [], bullets = [], hearts = [], movingPlatforms = [], hazards = [], chests = [], abilityEffects = [];
+    const enemies = [], flyingEnemies = [], bullets = [], hearts = [], movingPlatforms = [], hazards = [], chests = [], abilityFX = [];
     const worldEnemyFn = WORLD_ENEMIES[worldIdx];
     const worldEnemyHP = worldEnemyFn.groundHP;
 
@@ -657,8 +818,7 @@ function startLevel(worldIdx, levelIdx) {
     if (!isBoss && layout.length > 1) {
         const keyPlat = layout[layout.length - 2];
         keyMesh = Render3D.createKeyMesh();
-        keyBaseY = keyPlat.y + 2.2;
-        keyMesh.position.set(keyPlat.x, keyBaseY, 0);
+        keyMesh.position.set(keyPlat.x, keyPlat.y + 2.2, 0);
         scene.add(keyMesh);
     }
 
@@ -673,7 +833,12 @@ function startLevel(worldIdx, levelIdx) {
     }
 
     // JEFE DEMONIACO (solo nivel 5 de cada mundo, escala con el mundo)
+    // Cada mundo tiene un ataque especial propio a partir de la Fase 2 (50% HP):
+    // Mundo 0 (Jardín Rosa): bolas de fuego cayendo. Mundo 1 (Valle Dorado): picos de hielo del suelo.
+    // Mundo 2 (Castillo Dulce): orbes sombra que persiguen. La Fase 3 (25% HP) intensifica el ataque de su mundo.
     const fireballs = [];
+    const groundSpikes = [];
+    const shadowOrbs = [];
     const bossPatrolMin = lastPlat.x - 8;
     const bossPatrolMax = lastPlat.x + lastPlat.w - 10;
     const bossStartX = lastPlat.x + 8;
@@ -683,18 +848,20 @@ function startLevel(worldIdx, levelIdx) {
         bossMesh.position.set(bossStartX, 3.5, 0);
         scene.add(bossMesh);
 
+        const baseSpeed = 7.5 + worldIdx * 1.2;
         boss = {
             mesh: bossMesh,
             hp: 10 + worldIdx * 4,
             maxHP: 10 + worldIdx * 4,
             active: true,
             dir: -1,
-            speed: 7.5 + worldIdx * 1.2,
+            speed: baseSpeed,
+            baseSpeed,
             isFrozen: false,
             freezeTimer: 0,
-            isEnraged: false,
+            phase: 1, // 1: solo patrulla | 2: ataque especial de su mundo | 3: ataque especial intensificado
             iceBlock: null,
-            fireballTimer: 3.0
+            attackTimer: 2.6
         };
     }
 
@@ -730,6 +897,28 @@ function startLevel(worldIdx, levelIdx) {
         if (window.AudioFX) AudioFX.playUlti();
     }
 
+    // Ataque especial del jefe de Valle Dorado: pico de hielo que erupciona del suelo cerca del jugador
+    function spawnBossIceSpike() {
+        const targetX = playerMesh.position.x + (Math.random() - 0.5) * 6;
+        const groundY = getGroundYAt(targetX);
+
+        const warnMesh = Render3D.createWarningRing(1.3, 0x40c4ff);
+        warnMesh.position.set(targetX, groundY + 0.05, 0);
+        scene.add(warnMesh);
+
+        groundSpikes.push({ warnMesh, spikeMesh: null, targetX, groundY, timer: 0.85, erupted: false, life: 0 });
+        if (window.AudioFX) AudioFX.playFreeze();
+    }
+
+    // Ataque especial del jefe de Castillo Dulce: orbe sombra que persigue lentamente al jugador
+    function spawnBossShadowOrb() {
+        const orbMesh = Render3D.createShadowOrbMesh();
+        orbMesh.position.set(boss.mesh.position.x, boss.mesh.position.y + 1.5, 0);
+        scene.add(orbMesh);
+        shadowOrbs.push({ mesh: orbMesh, life: 4.5, speed: 8.5 + worldIdx * 0.6 });
+        if (window.AudioFX) AudioFX.playUlti();
+    }
+
     // Meta Final
     const goalMesh = Render3D.createGoalPost();
     goalMesh.position.set(goalX, 1.2, 0);
@@ -741,31 +930,22 @@ function startLevel(worldIdx, levelIdx) {
     // Controles
     const keys = { left: false, right: false };
     let facingRight = true, jumpCount = 0;
-    let prevVelY = 0; // usado para distinguir "aterrizar" del "punto más alto del salto"
     const maxJumpsAllowed = currentChar.maxJumps || 2;
 
     const onKeyDown = (e) => {
         if (e.key === 'ArrowLeft' || e.key === 'a') keys.left = true;
         if (e.key === 'ArrowRight' || e.key === 'd') keys.right = true;
-        // e.repeat es true cuando el navegador auto-repite el evento por mantener
-        // la tecla presionada. Sin este freno, mantener espacio hacía que el
-        // personaje saltara una y otra vez en cuanto tocaba el suelo (parecía
-        // "salto infinito"). Con esto, saltar/disparar/especial solo se activan
-        // con una pulsación real, no con el auto-repeat del sistema operativo.
-        if (e.repeat) return;
-        if (e.key === ' ' || e.key === 'w') doJump();
+        if (e.key === ' ' || e.key === 'w') {
+            if (jumpCount < maxJumpsAllowed) {
+                playerBody.velocity.y = currentChar.jump;
+                jumpCount++;
+                if (window.AudioFX) AudioFX.playJump();
+            }
+        }
         if (e.key === 'f' || e.key === 'z') shoot('normal');
         if (e.key === 'x' || e.key === 'c') shoot('ice');
         if (e.key === 'e' || e.key === 'E') useSpecialAbility();
     };
-
-    function doJump() {
-        if (jumpCount < maxJumpsAllowed) {
-            playerBody.velocity.y = currentChar.jump;
-            jumpCount++;
-            if (window.AudioFX) AudioFX.playJump();
-        }
-    }
 
     window.addEventListener('keydown', onKeyDown);
     const onKeyUp = (e) => {
@@ -773,42 +953,6 @@ function startLevel(worldIdx, levelIdx) {
         if (e.key === 'ArrowRight' || e.key === 'd') keys.right = false;
     };
     window.addEventListener('keyup', onKeyUp);
-
-    // --- CONTROLES TÁCTILES (móvil/tablet): D-pad a la izquierda, acciones a la derecha ---
-    const isTouchDevice = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
-    let touchControlsEl = null;
-    if (isTouchDevice) {
-        touchControlsEl = document.createElement('div');
-        touchControlsEl.style.cssText = `position:absolute; inset:0; pointer-events:none; z-index:5; font-family:'Fredoka One', cursive; user-select:none;`;
-        touchControlsEl.innerHTML = `
-            <div style="position:absolute; left:10px; bottom:10px; display:flex; gap:8px; pointer-events:auto;">
-                <button data-t="left" style="width:52px;height:52px;border-radius:50%;border:3px solid #fff;background:rgba(216,27,96,0.55);color:#fff;font-size:22px;touch-action:none;">◀</button>
-                <button data-t="right" style="width:52px;height:52px;border-radius:50%;border:3px solid #fff;background:rgba(216,27,96,0.55);color:#fff;font-size:22px;touch-action:none;">▶</button>
-            </div>
-            <div style="position:absolute; right:10px; bottom:10px; display:flex; align-items:flex-end; gap:8px; pointer-events:auto;">
-                <button data-t="ice" style="width:44px;height:44px;border-radius:50%;border:3px solid #fff;background:rgba(79,195,247,0.7);color:#fff;font-size:18px;touch-action:none;">❄️</button>
-                <button data-t="shoot" style="width:44px;height:44px;border-radius:50%;border:3px solid #fff;background:rgba(216,27,96,0.7);color:#fff;font-size:18px;touch-action:none;">🍰</button>
-                <button data-t="special" style="width:50px;height:50px;border-radius:50%;border:3px solid #fff;background:rgba(255,193,7,0.8);color:#fff;font-size:20px;touch-action:none;">✨</button>
-                <button data-t="jump" style="width:58px;height:58px;border-radius:50%;border:3px solid #fff;background:rgba(233,30,99,0.85);color:#fff;font-size:22px;touch-action:none;">⬆️</button>
-            </div>
-        `;
-        container.appendChild(touchControlsEl);
-
-        const bindHold = (selector, onDown, onUp) => {
-            const el = touchControlsEl.querySelector(selector);
-            const down = (ev) => { ev.preventDefault(); onDown(); };
-            const up = (ev) => { ev.preventDefault(); if (onUp) onUp(); };
-            el.addEventListener('touchstart', down, { passive: false });
-            el.addEventListener('touchend', up, { passive: false });
-            el.addEventListener('touchcancel', up, { passive: false });
-        };
-        bindHold('[data-t="left"]', () => { keys.left = true; }, () => { keys.left = false; });
-        bindHold('[data-t="right"]', () => { keys.right = true; }, () => { keys.right = false; });
-        bindHold('[data-t="jump"]', () => doJump());
-        bindHold('[data-t="shoot"]', () => shoot('normal'));
-        bindHold('[data-t="ice"]', () => shoot('ice'));
-        bindHold('[data-t="special"]', () => useSpecialAbility());
-    }
 
     function shoot(type) {
         const mesh = Render3D.createCakeBulletMesh(type);
@@ -822,59 +966,11 @@ function startLevel(worldIdx, levelIdx) {
     }
 
     // --- SISTEMA DE HABILIDADES ESPECIALES (ULTIS) ---
-    // --- EFECTO VISUAL GENÉRICO PARA HABILIDADES ESPECIALES (anillo expansivo + chispas) ---
-    function spawnAbilityBurst(colorHex, radius = 3.5, duration = 0.5) {
-        const group = new THREE.Group();
-        group.position.set(playerMesh.position.x, playerMesh.position.y + 0.9, 0.1);
-
-        const ringGeo = new THREE.RingGeometry(0.2, 0.55, 32);
-        const ringMat = new THREE.MeshBasicMaterial({ color: colorHex, transparent: true, opacity: 0.9, side: THREE.DoubleSide, depthWrite: false });
-        const ring = new THREE.Mesh(ringGeo, ringMat);
-        group.add(ring);
-
-        const sparkles = [];
-        const sparkleCount = 8;
-        for (let i = 0; i < sparkleCount; i++) {
-            const sGeo = new THREE.CircleGeometry(0.14, 8);
-            const sMat = new THREE.MeshBasicMaterial({ color: colorHex, transparent: true, opacity: 1, depthWrite: false });
-            const s = new THREE.Mesh(sGeo, sMat);
-            const angle = (i / sparkleCount) * Math.PI * 2;
-            s.userData.dir = { x: Math.cos(angle), y: Math.sin(angle) };
-            group.add(s);
-            sparkles.push(s);
-        }
-
-        scene.add(group);
-        abilityEffects.push({ group, ring, sparkles, timer: 0, duration, radius });
-    }
-
-    function updateAbilityEffects(delta) {
-        for (let i = abilityEffects.length - 1; i >= 0; i--) {
-            const fx = abilityEffects[i];
-            fx.timer += delta;
-            const t = Math.min(fx.timer / fx.duration, 1);
-            const scale = 1 + t * fx.radius;
-            fx.ring.scale.set(scale, scale, 1);
-            fx.ring.material.opacity = 0.9 * (1 - t);
-            fx.sparkles.forEach(s => {
-                s.position.x = s.userData.dir.x * fx.radius * t;
-                s.position.y = s.userData.dir.y * fx.radius * t;
-                s.material.opacity = 1 - t;
-            });
-            if (t >= 1) {
-                scene.remove(fx.group);
-                abilityEffects.splice(i, 1);
-            }
-        }
-    }
-
     function useSpecialAbility() {
         if (abilityCooldown > 0) return;
         abilityCooldown = currentChar.cooldown;
 
         if (gameProgress.selectedSkin === 'kitty') {
-            spawnAbilityBurst(0xff4081, 5, 0.5);
-            if (window.AudioFX) AudioFX.playUlti();
             enemies.forEach(e => {
                 if (e.active && playerMesh.position.distanceTo(e.mesh.position) < 16) {
                     e.active = false;
@@ -886,42 +982,39 @@ function startLevel(worldIdx, levelIdx) {
             if (boss.active && playerMesh.position.distanceTo(boss.mesh.position) < 18) {
                 boss.hp -= 2;
             }
+            spawnAbilityBurst(currentChar.color, playerMesh.position.x, playerMesh.position.y + 0.1, playerMesh.position.z, 10, 0.5);
+            triggerShake(0.22, 0.18);
         } else if (gameProgress.selectedSkin === 'mymelody') {
-            spawnAbilityBurst(0xffb2dd, 2.5, 0.45);
-            if (window.AudioFX) AudioFX.playUlti();
             isInvulnerable = true;
             abilityTimer = 5.0;
             if (!shieldMesh) {
                 shieldMesh = Render3D.createShieldBubble();
                 playerMesh.add(shieldMesh);
             }
+            spawnAbilityBurst(currentChar.color, playerMesh.position.x, playerMesh.position.y + 0.6, playerMesh.position.z, 3.2, 0.4);
         } else if (gameProgress.selectedSkin === 'kuromi') {
-            spawnAbilityBurst(0x6a1b9a, 2, 0.35);
-            if (window.AudioFX) AudioFX.playUlti();
             isDashing = true;
             abilityTimer = 0.6;
+            spawnAbilityBurst(currentChar.color, playerMesh.position.x, playerMesh.position.y + 0.1, playerMesh.position.z, 2.6, 0.35);
             playerBody.velocity.x = facingRight ? 42 : -42;
         } else if (gameProgress.selectedSkin === 'cinnamon') {
-            spawnAbilityBurst(0x81d4fa, 4.5, 0.5);
-            if (window.AudioFX) AudioFX.playFreeze();
             enemies.concat(flyingEnemies).forEach(e => {
                 if (e.active && playerMesh.position.distanceTo(e.mesh.position) < 14) {
                     e.isFrozen = true;
                     e.freezeTimer = 4.0;
                 }
             });
+            spawnAbilityBurst(currentChar.color, playerMesh.position.x, playerMesh.position.y + 0.1, playerMesh.position.z, 8, 0.5);
         } else if (gameProgress.selectedSkin === 'purin') {
-            spawnAbilityBurst(0xffca28, 3.5, 0.5);
-            if (window.AudioFX) AudioFX.playUlti();
             playerBody.velocity.y = 18;
             enemies.forEach(e => {
                 if (e.active && playerMesh.position.distanceTo(e.mesh.position) < 12) {
                     e.active = false;
                     scene.remove(e.mesh);
-                    physWorld.removeBody(e.body);
-                    gameProgress.score += 200;
                 }
             });
+            spawnAbilityBurst(currentChar.color, playerMesh.position.x, playerMesh.position.y + 0.1, playerMesh.position.z, 7, 0.45);
+            triggerShake(0.2, 0.15);
         }
         updateHUD();
     }
@@ -932,12 +1025,20 @@ function startLevel(worldIdx, levelIdx) {
         lives--;
         updateHUD();
         playerBody.velocity.set(facingRight ? -14 : 14, 11, 0);
+        triggerShake(0.3, 0.22);
 
         if (lives <= 0) {
             isRunning = false;
             if (window.AudioFX) AudioFX.stopBackgroundMusic();
             cleanupListeners();
-            renderLevelMenu(worldIdx);
+            showEndScreen({
+                emoji: '💔',
+                title: '¡Oh no!',
+                subtitle: 'Te quedaste sin vidas',
+                accent: '#ff4081',
+                buttonLabel: 'Reintentar',
+                onContinue: () => renderLevelMenu(worldIdx)
+            });
         } else {
             isInvulnerable = true;
             let flashes = 0;
@@ -956,7 +1057,43 @@ function startLevel(worldIdx, levelIdx) {
     function cleanupListeners() {
         window.removeEventListener('keydown', onKeyDown);
         window.removeEventListener('keyup', onKeyUp);
-        if (touchControlsEl && touchControlsEl.parentNode) touchControlsEl.parentNode.removeChild(touchControlsEl);
+        window.removeEventListener('resize', resizeRenderer);
+        if (window.__resizeGameCanvas === resizeRenderer) window.__resizeGameCanvas = null;
+    }
+
+    // Pantalla de cierre (Game Over / victoria) sobre el último cuadro del juego, antes de volver al menú
+    function showEndScreen({ emoji, title, subtitle, accent, buttonLabel, onContinue }) {
+        const overlay = document.createElement('div');
+        overlay.style.cssText = `
+            position: absolute; inset: 0; display: flex; flex-direction: column;
+            align-items: center; justify-content: center; text-align: center;
+            background: rgba(255,255,255,0.95); z-index: 25; font-family: 'Fredoka One', cursive;
+            opacity: 0; transition: opacity 0.25s ease;
+        `;
+        overlay.innerHTML = `
+            <div style="font-size:54px; margin-bottom:6px;">${emoji}</div>
+            <div style="font-size:26px; color:${accent}; text-shadow:2px 2px 0 #fff;">${title}</div>
+            <div style="font-size:14px; color:#888; margin-top:8px; font-family:sans-serif;">${subtitle}</div>
+            <button id="end-continue-btn" style="margin-top:20px; padding:10px 26px; border-radius:20px; border:3px solid ${accent}; background:#fff; color:${accent}; font-family:inherit; font-size:14px; cursor:pointer;">${buttonLabel}</button>
+        `;
+        container.appendChild(overlay);
+        requestAnimationFrame(() => { overlay.style.opacity = '1'; });
+        overlay.querySelector('#end-continue-btn').onclick = () => { overlay.remove(); onContinue(); };
+    }
+
+    // Aviso rápido que se autodesvanece (usado al superar un nivel normal, para no frenar el ritmo)
+    function showQuickToast(text, accent, thenCallback, ms = 950) {
+        const toast = document.createElement('div');
+        toast.style.cssText = `
+            position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+            background: rgba(255,255,255,0.9); z-index: 25; font-family: 'Fredoka One', cursive;
+            font-size: 24px; color: ${accent}; text-shadow: 2px 2px 0 #fff;
+            opacity: 0; transition: opacity 0.2s ease;
+        `;
+        toast.textContent = text;
+        container.appendChild(toast);
+        requestAnimationFrame(() => { toast.style.opacity = '1'; });
+        setTimeout(() => { toast.remove(); thenCallback(); }, ms);
     }
 
     function completeNormalLevel() {
@@ -966,8 +1103,7 @@ function startLevel(worldIdx, levelIdx) {
         gameProgress.score += 1000;
         wp.keys++;
         if (levelIdx + 1 < LEVELS_PER_WORLD) wp.unlockedLevels[levelIdx + 1] = true;
-        saveProgress();
-        renderLevelMenu(worldIdx);
+        showQuickToast('🔑 ¡Llave obtenida!', '#ff4081', () => renderLevelMenu(worldIdx));
     }
 
     function completeBossLevel() {
@@ -976,15 +1112,19 @@ function startLevel(worldIdx, levelIdx) {
         cleanupListeners();
         gameProgress.score += 2500;
         wp.completed = true;
-        if (worldIdx + 1 < WORLDS.length) {
+        const isLastWorld = !(worldIdx + 1 < WORLDS.length);
+        if (!isLastWorld) {
             gameProgress.worlds[worldIdx + 1].unlocked = true;
-            saveProgress();
             if (window.AudioFX) AudioFX.playWorldUnlock();
-            renderWorldMenu();
-        } else {
-            saveProgress();
-            renderWorldMenu();
         }
+        showEndScreen({
+            emoji: isLastWorld ? '👑' : '🏆',
+            title: isLastWorld ? '¡Juego completado!' : '¡Mundo superado!',
+            subtitle: isLastWorld ? '+2500 puntos · ¡Venciste a todos los jefes!' : '+2500 puntos · ¡Nuevo mundo desbloqueado!',
+            accent: '#ffab00',
+            buttonLabel: 'Continuar',
+            onContinue: () => renderWorldMenu()
+        });
     }
 
     const clock = new THREE.Clock();
@@ -994,21 +1134,21 @@ function startLevel(worldIdx, levelIdx) {
     function animate() {
         if (!isRunning) return;
         requestAnimationFrame(animate);
+        try {
 
         const delta = clock.getDelta();
 
-        // Todo el trabajo de este fotograma va en un try/catch: si algo falla de forma
-        // inesperada, antes el juego se quedaba congelado en silencio (sin más pistas
-        // que "se quedó pegado en el aire"), porque un error a mitad del loop cortaba
-        // la función antes de llegar a renderer.render(). Ahora el error queda anotado
-        // en la consola del navegador y el juego sigue corriendo en el siguiente
-        // fotograma en vez de quedarse trabado para siempre.
-        try {
+        // Hit-stop: micro-pausa de un instante al conectar un golpe fuerte (ej. contra el jefe).
+        // Se sigue dibujando el cuadro para que no parpadee, pero la física/lógica se congela un momento.
+        if (hitStopTimer > 0) {
+            hitStopTimer -= delta;
+            renderer.render(scene, camera);
+            return;
+        }
+
         physWorld.step(1 / 60, delta, 3);
 
         if (hintTimer > 0) { hintTimer -= delta; if (hintTimer <= 0) updateHUD(); }
-
-        updateAbilityEffects(delta);
 
         // Actualizar Cooldowns y Habilidades
         if (abilityCooldown > 0) {
@@ -1052,33 +1192,15 @@ function startLevel(worldIdx, levelIdx) {
                 Render3D.updatePlayerSpriteAnim(playerMesh, facingRight ? 'right' : 'left', 0, isAirborne);
             }
         } else {
-            enemies.forEach(e => {
+            enemies.concat(flyingEnemies).forEach(e => {
                 if (e.active && playerMesh.position.distanceTo(e.mesh.position) < 2.0) {
                     e.active = false;
                     scene.remove(e.mesh);
-                    physWorld.removeBody(e.body);
-                    gameProgress.score += 200;
-                }
-            });
-            flyingEnemies.forEach(fe => {
-                if (fe.active && playerMesh.position.distanceTo(fe.mesh.position) < 2.0) {
-                    fe.active = false;
-                    scene.remove(fe.mesh);
-                    gameProgress.score += 250;
                 }
             });
         }
 
-        // Solo reinicia los saltos disponibles al ATERRIZAR, es decir, cuando el
-        // personaje venía cayendo y deja de hacerlo (sea porque se detiene en 0
-        // o porque el motor de físicas responde con un pequeño rebote positivo
-        // al tocar la plataforma). Comparar solo con "cerca de 0" no basta: al
-        // aterrizar con fuerza la velocidad a veces salta de muy negativa a
-        // positiva en un solo fotograma y nunca pasa por ese rango, dejando el
-        // salto bloqueado para siempre. Tampoco se dispara en el punto más alto
-        // del salto, porque ahí la velocidad anterior es positiva, no negativa.
-        if (prevVelY < -0.1 && playerBody.velocity.y >= -0.1) jumpCount = 0;
-        prevVelY = playerBody.velocity.y;
+        if (Math.abs(playerBody.velocity.y) < 0.1) jumpCount = 0;
 
         // Enemigos Terrestres
         enemies.forEach(e => {
@@ -1131,12 +1253,18 @@ function startLevel(worldIdx, levelIdx) {
             }
         });
 
-        // Lógica del Jefe Demoniaco y Modo Furia
+        // Lógica del Jefe Demoniaco: patrulla + ataque especial propio de cada mundo, con 2 fases de furia
         if (boss.active) {
-            if (boss.hp <= boss.maxHP / 2 && !boss.isEnraged) {
-                boss.isEnraged = true;
-                boss.speed *= 1.4;
-                boss.fireballTimer = 1.5;
+            if (boss.phase === 1 && boss.hp <= boss.maxHP * 0.5) {
+                boss.phase = 2;
+                boss.speed = boss.baseSpeed * 1.3;
+                boss.attackTimer = 1.6;
+                updateHUD();
+            } else if (boss.phase === 2 && boss.hp <= boss.maxHP * 0.25) {
+                boss.phase = 3;
+                boss.speed = boss.baseSpeed * 1.55;
+                boss.attackTimer = 1.0;
+                updateHUD();
             }
 
             if (boss.isFrozen) {
@@ -1152,19 +1280,28 @@ function startLevel(worldIdx, levelIdx) {
                 }
             } else {
                 boss.mesh.position.x += boss.dir * boss.speed * delta;
-                boss.mesh.rotation.y += boss.isEnraged ? 0.06 : 0.03;
+                boss.mesh.rotation.y += boss.phase >= 2 ? 0.06 : 0.03;
 
                 if (boss.mesh.position.x < bossPatrolMin) boss.dir = 1;
                 if (boss.mesh.position.x > bossPatrolMax) boss.dir = -1;
 
                 if (playerMesh.position.distanceTo(boss.mesh.position) < 2.5) takeDamage();
 
-                if (boss.isEnraged) {
-                    boss.fireballTimer -= delta;
-                    if (boss.fireballTimer <= 0) {
-                        spawnBossFireball();
-                        spawnBossFireball();
-                        boss.fireballTimer = 2.2;
+                if (boss.phase >= 2) {
+                    boss.attackTimer -= delta;
+                    if (boss.attackTimer <= 0) {
+                        if (worldIdx === 0) {
+                            spawnBossFireball();
+                            if (boss.phase === 3) spawnBossFireball();
+                        } else if (worldIdx === 1) {
+                            spawnBossIceSpike();
+                            spawnBossIceSpike();
+                            if (boss.phase === 3) spawnBossIceSpike();
+                        } else {
+                            spawnBossShadowOrb();
+                            if (boss.phase === 3) spawnBossShadowOrb();
+                        }
+                        boss.attackTimer = boss.phase === 3 ? 1.4 : 2.2;
                     }
                 }
             }
@@ -1194,6 +1331,46 @@ function startLevel(worldIdx, levelIdx) {
             }
         }
 
+        // Picos de hielo del jefe (Valle Dorado): aviso -> erupción -> daño si el jugador está encima
+        for (let i = groundSpikes.length - 1; i >= 0; i--) {
+            const gs = groundSpikes[i];
+            if (!gs.erupted) {
+                gs.timer -= delta;
+                const pulse = 0.35 + Math.abs(Math.sin(Date.now() * 0.012)) * 0.35;
+                if (gs.warnMesh.children[0]) gs.warnMesh.children[0].material.opacity = pulse;
+                if (gs.timer <= 0) {
+                    gs.erupted = true;
+                    scene.remove(gs.warnMesh);
+                    gs.spikeMesh = Render3D.createIceSpikeMesh();
+                    gs.spikeMesh.position.set(gs.targetX, gs.groundY - 1.4, 0);
+                    scene.add(gs.spikeMesh);
+                    gs.life = 1.3;
+                }
+            } else {
+                gs.spikeMesh.position.y = Math.min(gs.groundY + 0.3, gs.spikeMesh.position.y + delta * 5);
+                const dist = Math.abs(playerMesh.position.x - gs.targetX);
+                if (dist < 1.1 && Math.abs(playerMesh.position.y - gs.groundY) < 2.6) takeDamage();
+                gs.life -= delta;
+                if (gs.life <= 0) { scene.remove(gs.spikeMesh); groundSpikes.splice(i, 1); }
+            }
+        }
+
+        // Orbes sombra del jefe (Castillo Dulce): persiguen lentamente al jugador
+        for (let i = shadowOrbs.length - 1; i >= 0; i--) {
+            const so = shadowOrbs[i];
+            so.life -= delta;
+            const dx = playerMesh.position.x - so.mesh.position.x;
+            const dy = playerMesh.position.y - so.mesh.position.y;
+            const dist = Math.hypot(dx, dy);
+            if (dist > 0.1) {
+                so.mesh.position.x += (dx / dist) * so.speed * delta;
+                so.mesh.position.y += (dy / dist) * so.speed * delta;
+            }
+            so.mesh.rotation.y += delta * 4;
+            if (dist < 1.3) { takeDamage(); so.life = 0; }
+            if (so.life <= 0) { scene.remove(so.mesh); shadowOrbs.splice(i, 1); }
+        }
+
         // Corazones
         hearts.forEach(h => {
             if (h.active) {
@@ -1210,7 +1387,7 @@ function startLevel(worldIdx, levelIdx) {
         // Llave del nivel
         if (keyMesh && !keyCollected) {
             keyMesh.rotation.y += delta * 2.2;
-            keyMesh.position.y = keyBaseY + Math.sin(Date.now() * 0.003) * 0.3;
+            keyMesh.position.y += Math.sin(Date.now() * 0.003) * 0.003;
             if (playerMesh.position.distanceTo(keyMesh.position) < 1.5) {
                 keyCollected = true;
                 scene.remove(keyMesh);
@@ -1236,11 +1413,7 @@ function startLevel(worldIdx, levelIdx) {
         });
 
         // Proyectiles y Congelamiento
-        // Se recorre de atrás hacia adelante para poder quitar balas del arreglo con splice
-        // sin saltarse ninguna (forEach + splice en el mismo arreglo se salta el elemento
-        // siguiente al que se elimina, dejando balas "vivas" sin revisar).
-        for (let bi = bullets.length - 1; bi >= 0; bi--) {
-            const b = bullets[bi];
+        bullets.forEach((b, idx) => {
             b.mesh.position.x += b.vx * delta;
             b.life--;
 
@@ -1251,6 +1424,8 @@ function startLevel(worldIdx, levelIdx) {
                     boss.freezeTimer = 3.0;
                 } else {
                     boss.hp--;
+                    triggerHitStop(0.05);
+                    triggerShake(0.14, 0.12);
                 }
                 b.life = 0;
                 gameProgress.score += 150;
@@ -1259,6 +1434,12 @@ function startLevel(worldIdx, levelIdx) {
                     scene.remove(boss.mesh);
                     fireballs.forEach(fb => { scene.remove(fb.fireMesh); scene.remove(fb.warnMesh); });
                     fireballs.length = 0;
+                    groundSpikes.forEach(gs => { if (gs.warnMesh) scene.remove(gs.warnMesh); if (gs.spikeMesh) scene.remove(gs.spikeMesh); });
+                    groundSpikes.length = 0;
+                    shadowOrbs.forEach(so => scene.remove(so.mesh));
+                    shadowOrbs.length = 0;
+                    triggerShake(0.55, 0.4);
+                    triggerHitStop(0.12);
                     gameProgress.score += 2000;
                     updateHUD();
                 }
@@ -1307,8 +1488,8 @@ function startLevel(worldIdx, levelIdx) {
                 }
             });
 
-            if (b.life <= 0) { scene.remove(b.mesh); bullets.splice(bi, 1); }
-        }
+            if (b.life <= 0) { scene.remove(b.mesh); bullets.splice(idx, 1); }
+        });
 
         // Animación de lava: brasas subiendo y llamas titilando
         hazards.forEach(hz => {
@@ -1349,16 +1530,12 @@ function startLevel(worldIdx, levelIdx) {
             mp.lastY = newY;
         });
 
-        // Peligros: picos sobre plataforma golpean al pisarlos; lava/picos en huecos dañan y reposicionan.
-        // Importante: el reposicionamiento SOLO debe ocurrir una vez por golpe (mientras el jugador
-        // está invulnerable/parpadeando), nunca en cada fotograma seguido — si no, en ciertos layouts
-        // el punto de "reposicionar" podía volver a caer dentro de la misma zona de peligro y quedar
-        // reposicionando al jugador sin parar, dejándolo congelado en el aire para siempre.
+        // Peligros: picos sobre plataforma golpean al pisarlos; lava/picos en huecos dañan y reposicionan
         hazards.forEach(hz => {
             if (playerBody.position.x < hz.x1 || playerBody.position.x > hz.x2) return;
             if (hz.type === 'platformSpikes') {
                 if (Math.abs(playerBody.position.y - (hz.y + 1.3)) < 0.9) takeDamage();
-            } else if (playerBody.position.y < hz.y + 1.2 && !isInvulnerable) {
+            } else if (playerBody.position.y < hz.y + 1.2) {
                 takeDamage();
                 playerBody.position.set(hz.safeX, hz.safeY + 2.5, 0);
                 playerBody.velocity.set(0, 5, 0);
@@ -1380,14 +1557,40 @@ function startLevel(worldIdx, levelIdx) {
             }
         }
 
-        // Cámara Seguidora Suave
-        camera.position.x = THREE.MathUtils.lerp(camera.position.x, playerMesh.position.x + 3, 0.08);
-        camera.position.y = THREE.MathUtils.lerp(camera.position.y, playerMesh.position.y + 3, 0.08);
+        // Cámara Seguidora Suave + temblor (screen shake) que decae con el tiempo
+        let shakeX = 0, shakeY = 0;
+        if (shakeTimer > 0) {
+            shakeTimer -= delta;
+            const decay = Math.max(0, shakeTimer / shakeDuration);
+            shakeX = (Math.random() - 0.5) * shakeMag * decay;
+            shakeY = (Math.random() - 0.5) * shakeMag * decay;
+            if (shakeTimer <= 0) shakeMag = 0;
+        }
+        camera.position.x = THREE.MathUtils.lerp(camera.position.x, playerMesh.position.x + 3, 0.08) + shakeX;
+        camera.position.y = THREE.MathUtils.lerp(camera.position.y, playerMesh.position.y + 3, 0.08) + shakeY;
         camera.position.z = 15;
         camera.lookAt(playerMesh.position.x + 2, playerMesh.position.y + 1, 0);
 
+        // Estallidos visuales de las ultis: se expanden y se desvanecen
+        for (let i = abilityFX.length - 1; i >= 0; i--) {
+            const fx = abilityFX[i];
+            fx.life -= delta;
+            const t = 1 - Math.max(0, fx.life / fx.maxLife);
+            const scale = 1 + (fx.endScale - 1) * t;
+            fx.mesh.scale.set(scale, 1, scale);
+            const fade = Math.max(0, 1 - t);
+            const ring = fx.mesh.getObjectByName('burstRing');
+            const glow = fx.mesh.getObjectByName('burstGlow');
+            const sparkles = fx.mesh.getObjectByName('burstSparkles');
+            if (ring) ring.material.opacity = 0.65 * fade;
+            if (glow) glow.material.opacity = 0.28 * fade;
+            if (sparkles) sparkles.material.opacity = 0.8 * fade;
+            if (fx.life <= 0) { scene.remove(fx.mesh); abilityFX.splice(i, 1); }
+        }
+
         // Fondo animado
         if (bgDecor) bgDecor.children.forEach(c => {
+          try {
             if (c.userData && c.userData.isSnowflake) {
                 c.position.y -= delta * c.userData.fallSpeed;
                 c.position.x += Math.sin(Date.now() * 0.001 + c.userData.driftOffset) * delta * 0.4;
@@ -1402,7 +1605,7 @@ function startLevel(worldIdx, levelIdx) {
             }
             if (c.userData && (c.userData.isButterfly || c.userData.isBird)) {
                 const t = Date.now() * 0.001 * c.userData.roamSpeed + c.userData.roamOffset;
-                c.position.x = c.userData.baseX + Math.sin(t) * 4;
+                c.position.x = (c.userData.baseX ?? c.position.x) + Math.sin(t) * 4;
                 c.position.y = c.userData.baseY + Math.sin(t * 1.7) * 1.2;
                 c.rotation.y = Math.cos(t) > 0 ? 0 : Math.PI;
                 const wingL = c.getObjectByName('wingL');
@@ -1414,7 +1617,7 @@ function startLevel(worldIdx, levelIdx) {
             }
             if (c.userData && c.userData.isFirefly) {
                 const t = Date.now() * 0.001 * c.userData.roamSpeed + c.userData.roamOffset;
-                c.position.x = c.userData.baseX + Math.sin(t) * 2.2;
+                c.position.x = (c.userData.baseX ?? c.position.x) + Math.sin(t) * 2.2;
                 c.position.y = c.userData.baseY + Math.sin(t * 1.4) * 0.9 + Math.cos(t * 0.6) * 0.4;
                 const pulse = 0.6 + Math.abs(Math.sin(Date.now() * 0.004 + c.userData.roamOffset)) * 0.4;
                 c.scale.set(pulse, pulse, pulse);
@@ -1433,13 +1636,22 @@ function startLevel(worldIdx, levelIdx) {
                 c.rotation.y += delta * 0.6;
                 c.position.y = c.userData.baseY + Math.sin(Date.now() * 0.001 * c.userData.floatSpeed + c.userData.floatOffset) * c.userData.floatAmp;
             }
+          } catch (decorErr) {
+            // Una pieza decorativa rota ya no tumba el resto del fondo animado.
+            console.warn('Fondo: se omitió una decoración con error', decorErr);
+          }
         });
 
-        } catch (err) {
-            console.error('Super Kitty vs Demonios: error en el loop del juego (se ignora este fotograma, el juego continúa):', err);
-        }
-
         renderer.render(scene, camera);
+
+        } catch (frameErr) {
+            // Red de seguridad: si algo falla en medio del cuadro, no se
+            // queda la pantalla congelada en negro sin explicación — se avisa
+            // en consola Y en pantalla, y se sigue intentando dibujar.
+            console.error('⚠️ Error en el cuadro de animación:', frameErr);
+            showGameError(frameErr);
+            try { renderer.render(scene, camera); } catch (renderErr) { /* nada más que hacer aquí */ }
+        }
     }
     animate();
 }

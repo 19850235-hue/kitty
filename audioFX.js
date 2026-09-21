@@ -3,16 +3,50 @@
 // ==========================================
 window.AudioFX = {
     ctx: null,
+    masterGain: null,
+    volume: 0.8, // 0 a 1
+    muted: false,
     init: () => {
         if (!AudioFX.ctx) {
             AudioFX.ctx = new (window.AudioContext || window.webkitAudioContext)();
+            AudioFX.masterGain = AudioFX.ctx.createGain();
+            AudioFX.masterGain.connect(AudioFX.ctx.destination);
+            // Recupera preferencia de volumen/silencio guardada (si existe)
+            try {
+                const raw = localStorage.getItem('superKittyVsDemonios_audio');
+                if (raw) {
+                    const saved = JSON.parse(raw);
+                    if (typeof saved.volume === 'number') AudioFX.volume = saved.volume;
+                    if (typeof saved.muted === 'boolean') AudioFX.muted = saved.muted;
+                }
+            } catch (err) { /* si falla, se usan los valores por defecto */ }
+            AudioFX.masterGain.gain.value = AudioFX.muted ? 0 : AudioFX.volume;
         }
+    },
+    setVolume: (v) => {
+        AudioFX.volume = Math.max(0, Math.min(1, v));
+        if (AudioFX.masterGain && !AudioFX.muted) AudioFX.masterGain.gain.value = AudioFX.volume;
+        AudioFX._savePrefs();
+    },
+    setMuted: (m) => {
+        AudioFX.muted = m;
+        if (AudioFX.masterGain) AudioFX.masterGain.gain.value = m ? 0 : AudioFX.volume;
+        AudioFX._savePrefs();
+    },
+    toggleMuted: () => {
+        AudioFX.setMuted(!AudioFX.muted);
+        return AudioFX.muted;
+    },
+    _savePrefs: () => {
+        try {
+            localStorage.setItem('superKittyVsDemonios_audio', JSON.stringify({ volume: AudioFX.volume, muted: AudioFX.muted }));
+        } catch (err) { /* localStorage no disponible, no pasa nada grave */ }
     },
     playJump: () => {
         if (!AudioFX.ctx) return;
         let osc = AudioFX.ctx.createOscillator();
         let gain = AudioFX.ctx.createGain();
-        osc.connect(gain); gain.connect(AudioFX.ctx.destination);
+        osc.connect(gain); gain.connect(AudioFX.masterGain);
         osc.type = 'sine';
         osc.frequency.setValueAtTime(150, AudioFX.ctx.currentTime);
         osc.frequency.exponentialRampToValueAtTime(600, AudioFX.ctx.currentTime + 0.15);
@@ -24,7 +58,7 @@ window.AudioFX = {
         if (!AudioFX.ctx) return;
         let osc = AudioFX.ctx.createOscillator();
         let gain = AudioFX.ctx.createGain();
-        osc.connect(gain); gain.connect(AudioFX.ctx.destination);
+        osc.connect(gain); gain.connect(AudioFX.masterGain);
         osc.type = 'triangle';
         osc.frequency.setValueAtTime(800, AudioFX.ctx.currentTime);
         osc.frequency.exponentialRampToValueAtTime(200, AudioFX.ctx.currentTime + 0.1);
@@ -36,7 +70,7 @@ window.AudioFX = {
         if (!AudioFX.ctx) return;
         let osc = AudioFX.ctx.createOscillator();
         let gain = AudioFX.ctx.createGain();
-        osc.connect(gain); gain.connect(AudioFX.ctx.destination);
+        osc.connect(gain); gain.connect(AudioFX.masterGain);
         osc.type = 'square';
         osc.frequency.setValueAtTime(1200, AudioFX.ctx.currentTime);
         osc.frequency.linearRampToValueAtTime(400, AudioFX.ctx.currentTime + 0.25);
@@ -48,7 +82,7 @@ window.AudioFX = {
         if (!AudioFX.ctx) return;
         let osc = AudioFX.ctx.createOscillator();
         let gain = AudioFX.ctx.createGain();
-        osc.connect(gain); gain.connect(AudioFX.ctx.destination);
+        osc.connect(gain); gain.connect(AudioFX.masterGain);
         osc.type = 'sawtooth';
         osc.frequency.setValueAtTime(300, AudioFX.ctx.currentTime);
         osc.frequency.linearRampToValueAtTime(1000, AudioFX.ctx.currentTime + 0.4);
@@ -60,7 +94,7 @@ window.AudioFX = {
         if (!AudioFX.ctx) return;
         let osc = AudioFX.ctx.createOscillator();
         let gain = AudioFX.ctx.createGain();
-        osc.connect(gain); gain.connect(AudioFX.ctx.destination);
+        osc.connect(gain); gain.connect(AudioFX.masterGain);
         osc.type = 'square';
         osc.frequency.setValueAtTime(500, AudioFX.ctx.currentTime);
         osc.frequency.exponentialRampToValueAtTime(120, AudioFX.ctx.currentTime + 0.12);
@@ -72,7 +106,7 @@ window.AudioFX = {
         if (!AudioFX.ctx) return;
         let osc = AudioFX.ctx.createOscillator();
         let gain = AudioFX.ctx.createGain();
-        osc.connect(gain); gain.connect(AudioFX.ctx.destination);
+        osc.connect(gain); gain.connect(AudioFX.masterGain);
         osc.type = 'sawtooth';
         osc.frequency.setValueAtTime(220, AudioFX.ctx.currentTime);
         osc.frequency.linearRampToValueAtTime(60, AudioFX.ctx.currentTime + 0.3);
@@ -86,7 +120,7 @@ window.AudioFX = {
         [660, 880, 1320].forEach((freq, i) => {
             let osc = AudioFX.ctx.createOscillator();
             let gain = AudioFX.ctx.createGain();
-            osc.connect(gain); gain.connect(AudioFX.ctx.destination);
+            osc.connect(gain); gain.connect(AudioFX.masterGain);
             osc.type = 'triangle';
             osc.frequency.setValueAtTime(freq, now + i * 0.09);
             gain.gain.setValueAtTime(0.001, now + i * 0.09);
@@ -101,7 +135,7 @@ window.AudioFX = {
         [523, 659, 784, 1047].forEach((freq, i) => {
             let osc = AudioFX.ctx.createOscillator();
             let gain = AudioFX.ctx.createGain();
-            osc.connect(gain); gain.connect(AudioFX.ctx.destination);
+            osc.connect(gain); gain.connect(AudioFX.masterGain);
             osc.type = 'sine';
             osc.frequency.setValueAtTime(freq, now + i * 0.12);
             gain.gain.setValueAtTime(0.001, now + i * 0.12);
@@ -122,7 +156,7 @@ window.AudioFX = {
             if (!AudioFX.ctx) return;
             let osc = AudioFX.ctx.createOscillator();
             let gain = AudioFX.ctx.createGain();
-            osc.connect(gain); gain.connect(AudioFX.ctx.destination);
+            osc.connect(gain); gain.connect(AudioFX.masterGain);
             osc.type = 'sine';
             const freq = notes[step % notes.length];
             osc.frequency.setValueAtTime(freq, AudioFX.ctx.currentTime);

@@ -90,10 +90,18 @@ const Render3D = {
             texture.offset.set(0, 0);
         }
 
+        // La hoja de Kitty (224x280 -> celdas de 56x70) no es cuadrada como la del
+        // resto de personajes (1024x1024 -> celdas de 256x256). Escalar todo a un
+        // sprite cuadrado la deformaba (se veía más "achatada"/ancha de lo que es
+        // en el arte original). Se corrige el ancho según la proporción real de
+        // cada hoja para que cada quien se vea con sus proporciones nativas.
+        const CELL_ASPECT = { 'sprites_kitty.png': 56 / 70 }; // ancho/alto de una celda; el resto ya es 1:1
+        const aspect = CELL_ASPECT[texturePath] || 1;
+
         const material = new THREE.SpriteMaterial({ map: texture, transparent: true });
         const sprite = new THREE.Sprite(material);
         const baseY = 1.2;
-        sprite.scale.set(3.2, 3.2, 1);
+        sprite.scale.set(3.2 * aspect, 3.2, 1);
         sprite.position.y = baseY;
         group.add(sprite);
 
@@ -1163,10 +1171,10 @@ const Render3D = {
         return group;
     },
 
-    // CÍRCULO DE ADVERTENCIA DE IMPACTO
-    createWarningRing: (radius = 2.0) => {
+    // CÍRCULO DE ADVERTENCIA DE IMPACTO (colorHex opcional para dar aviso temático por ataque)
+    createWarningRing: (radius = 2.0, colorHex = 0xff1744) => {
         const group = new THREE.Group();
-        const discMat = new THREE.MeshBasicMaterial({ color: 0xff1744, transparent: true, opacity: 0.45, side: THREE.DoubleSide });
+        const discMat = new THREE.MeshBasicMaterial({ color: colorHex, transparent: true, opacity: 0.45, side: THREE.DoubleSide });
         const disc = new THREE.Mesh(new THREE.CircleGeometry(radius, 32), discMat);
         disc.rotation.x = -Math.PI / 2;
         group.add(disc);
@@ -1175,6 +1183,65 @@ const Render3D = {
         const outline = new THREE.Mesh(new THREE.TorusGeometry(radius, 0.06, 8, 32), outlineMat);
         outline.rotation.x = -Math.PI / 2;
         group.add(outline);
+
+        return group;
+    },
+
+    // ATAQUE DE JEFE (Valle Dorado): PICO DE HIELO QUE ERUPCIONA DEL SUELO
+    createIceSpikeMesh: () => {
+        const group = new THREE.Group();
+        const mat = new THREE.MeshStandardMaterial({
+            color: 0x80deea, transparent: true, opacity: 0.92,
+            roughness: 0.05, metalness: 0.2, emissive: 0x26c6da, emissiveIntensity: 0.35
+        });
+        const spikes = [[0, 0, 0, 0.42, 1.7], [0.32, 0, -0.12, 0.24, 1.15], [-0.3, 0, 0.16, 0.22, 1.25], [0.1, 0, 0.32, 0.18, 0.85]];
+        spikes.forEach(([x, y, z, r, h]) => {
+            const spike = new THREE.Mesh(new THREE.ConeGeometry(r, h, 6), mat);
+            spike.position.set(x, y + h / 2, z);
+            group.add(spike);
+        });
+        return group;
+    },
+
+    // ATAQUE DE JEFE (Castillo Dulce): ORBE SOMBRA QUE PERSIGUE AL JUGADOR
+    createShadowOrbMesh: () => {
+        const group = new THREE.Group();
+        const coreMat = new THREE.MeshBasicMaterial({ color: 0x7e57c2 });
+        const core = new THREE.Mesh(new THREE.SphereGeometry(0.4, 14, 14), coreMat);
+        group.add(core);
+
+        const glowMat = new THREE.MeshBasicMaterial({ color: 0xb388ff, transparent: true, opacity: 0.4 });
+        const glow = new THREE.Mesh(new THREE.SphereGeometry(0.68, 14, 14), glowMat);
+        group.add(glow);
+
+        const trail = Render3D.createDemonParticles(0xb388ff);
+        trail.scale.set(0.6, 0.6, 0.6);
+        group.add(trail);
+
+        return group;
+    },
+
+    // ESTALLIDO VISUAL DE HABILIDAD ESPECIAL: anillo + resplandor que se expande y se desvanece.
+    // Se usa para darle impacto a las ultis de cada personaje (antes eran invisibles).
+    createAbilityBurstMesh: (colorHex) => {
+        const group = new THREE.Group();
+
+        const ringMat = new THREE.MeshBasicMaterial({ color: colorHex, transparent: true, opacity: 0.65, side: THREE.DoubleSide });
+        const ring = new THREE.Mesh(new THREE.RingGeometry(0.55, 0.9, 32), ringMat);
+        ring.rotation.x = -Math.PI / 2;
+        ring.name = 'burstRing';
+        group.add(ring);
+
+        const glowMat = new THREE.MeshBasicMaterial({ color: colorHex, transparent: true, opacity: 0.28 });
+        const glow = new THREE.Mesh(new THREE.CircleGeometry(0.9, 32), glowMat);
+        glow.rotation.x = -Math.PI / 2;
+        glow.name = 'burstGlow';
+        group.add(glow);
+
+        const sparkles = Render3D.createDemonParticles(colorHex);
+        sparkles.scale.set(1.4, 1.4, 1.4);
+        sparkles.name = 'burstSparkles';
+        group.add(sparkles);
 
         return group;
     },
@@ -1190,6 +1257,21 @@ const Render3D = {
             night: { hill1: 0x4a148c, hill2: 0x2a1454, sun: 0xe1f5fe, sunGlow: 0x7e57c2, tree: 0x7e57c2, cloud: 0xd1c4e9 }
         };
         const th = THEMES[theme] || THEMES.garden;
+
+        // Toque de luz propio por mundo, para que Valle Dorado y Castillo
+        // Dulce no se sientan iluminados exactamente igual que el Jardín.
+        if (theme === 'snow') {
+            const snowLight = new THREE.PointLight(0xbbdefb, 0.55, 90);
+            snowLight.position.set(0, 20, 10);
+            group.add(snowLight);
+        } else if (theme === 'night') {
+            const moonLight = new THREE.PointLight(0x9575cd, 0.6, 100);
+            moonLight.position.set(0, 25, 5);
+            group.add(moonLight);
+            const rimGlow = new THREE.PointLight(0x4a148c, 0.4, 60);
+            rimGlow.position.set(0, 5, 15);
+            group.add(rimGlow);
+        }
 
         const hillMat1 = new THREE.MeshStandardMaterial({ color: th.hill1, roughness: 0.8 });
         const hillMat2 = new THREE.MeshStandardMaterial({ color: th.hill2, roughness: 0.8 });
@@ -1269,7 +1351,7 @@ const Render3D = {
                 const bird = Render3D.createBird(birdColors[Math.floor(Math.random() * birdColors.length)]);
                 const baseY = 8 + Math.random() * 8;
                 bird.position.set(Math.random() * (levelWidth + 20) - 10, baseY, -6 - Math.random() * 6);
-                bird.userData = { isBird: true, baseY, roamSpeed: 0.5 + Math.random() * 0.4, roamOffset: Math.random() * Math.PI * 2, flapSpeed: 10 + Math.random() * 4 };
+                bird.userData = { isBird: true, baseX: bird.position.x, baseY, roamSpeed: 0.5 + Math.random() * 0.4, roamOffset: Math.random() * Math.PI * 2, flapSpeed: 10 + Math.random() * 4 };
                 group.add(bird);
             }
         } else if (theme === 'night') {
@@ -1716,3 +1798,4 @@ const Render3D = {
         return new THREE.Mesh(new THREE.SphereGeometry(0.42, 16, 16), mat);
     }
 };
+

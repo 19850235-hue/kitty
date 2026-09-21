@@ -27,6 +27,27 @@ body {
     position: relative;
 }
 
+/* Modo grande: se activa con el boton (esquina) o la tecla P, y se mantiene igual
+   al cambiar de menu, mundo o nivel (el contenedor nunca vuelve a su tamano chico). */
+.arcade-cabinet.cabinet-large {
+    width: 100%;
+    max-width: 100vw;
+    box-sizing: border-box;
+}
+
+.arcade-cabinet:fullscreen,
+.arcade-cabinet:-webkit-full-screen {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    width: 100vw;
+    height: 100vh;
+    max-width: 100vw;
+    border-radius: 0;
+    background: #fff5f8;
+}
+
 .arcade-header {
     display: flex;
     justify-content: center;
@@ -50,6 +71,13 @@ body {
     height: 400px;
     margin: 0 auto;
     box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.12);
+}
+
+/* Tamano grande del area de juego: crece bastante pero se mantiene proporcionado
+   y centrado, tanto en modo grande normal como en pantalla completa real. */
+#game-container.game-container-large {
+    width: min(96vw, 1400px);
+    height: min(80vh, 760px);
 }
 
 .instructions {
