@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Super Sanrio vs Demonios</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <div class="arcade-cabinet">
+    <div class="arcade-header">
+      <h1>🎀 Super Kitty vs Demonios 👺</h1>
+    </div>
+    <div id="game-container"></div>
+    <div class="instructions">
+      <span class="key-badge">⬅️➡️ / A D Mover</span>
+      <span class="key-badge">␣ / W Saltar</span>
+      <span class="key-badge">F / Z / K Disparo</span>
+      <span class="key-badge">X / C / L Hielo</span>
+      <span class="key-badge">E Especial</span>
+      <span class="key-badge">P Pantalla completa</span>
+    </div>
+  </div>
+
+  <!-- Librerías 3D y de físicas: deben cargar ANTES que render3d.js y physics.js -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/cannon.js/0.6.2/cannon.min.js"></script>
+
+  <script src="physics.js"></script>
+  <script src="audioFX.js"></script>
+  <script src="render3d.js"></script>
+  <script src="game.js"></script>
+</body>
+</html>
